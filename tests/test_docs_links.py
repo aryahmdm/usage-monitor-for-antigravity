@@ -18,7 +18,7 @@ REPOSITORY = Path(__file__).resolve().parent.parent
 README = REPOSITORY / 'README.md'
 ISSUE_TEMPLATE_CONFIG = REPOSITORY / '.github' / 'ISSUE_TEMPLATE' / 'config.yml'
 
-REPOSITORY_URL = 'https://github.com/jens-duttke/usage-monitor-for-claude'
+REPOSITORY_URL = 'https://github.com/aryahmdm/usage-monitor-for-antigravity'
 
 
 def _readme_anchors() -> set[str]:

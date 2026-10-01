@@ -1,5 +1,30 @@
 # Usage Monitor for Antigravity
 
+<p align="center">
+  <img src="assets/social-preview.png" alt="Usage Monitor for Antigravity Social Banner" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/aryahmdm/usage-monitor-for-antigravity/releases/latest"><img src="https://img.shields.io/github/v/release/aryahmdm/usage-monitor-for-antigravity?color=blue&label=Latest%20Release" alt="Latest Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/aryahmdm/usage-monitor-for-antigravity?color=green" alt="MIT License"></a>
+  <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-brightgreen" alt="Platform: Windows & Linux">
+  <img src="https://img.shields.io/badge/Python-3.10%2B-blue" alt="Python 3.10+">
+  <a href="https://github.com/aryahmdm/usage-monitor-for-antigravity/stargazers"><img src="https://img.shields.io/github/stars/aryahmdm/usage-monitor-for-antigravity?style=social" alt="GitHub Stars"></a>
+</p>
+
+<p align="center">
+  <strong>Real-time system tray rate limit & token monitor for Google Antigravity (<code>agy</code>).</strong><br>
+  Track your Gemini (Flash & Pro) and Claude/GPT 3P quotas live directly from your Windows taskbar.
+</p>
+
+<p align="center">
+  <a href="https://github.com/aryahmdm/usage-monitor-for-antigravity/releases/latest"><b>⬇️ Download Standalone EXE (v0.1.0)</b></a> •
+  <a href="#features">Features</a> •
+  <a href="#how-to-use">How to Use</a> •
+  <a href="#building-from-source">Build from Source</a>
+</p>
+
+---
 > [!NOTE]
 > ### Attribution & Acknowledgement
 > This project is adapted and forked from the original [Usage Monitor for Claude](https://github.com/jens-duttke/usage-monitor-for-claude) created by [Jens Duttke](https://github.com/jens-duttke). All credits for the original tray monitoring architecture, event loop designs, and UI concepts belong to Jens Duttke and contributors. This fork customizes the core quota engine to monitor **Google Antigravity (`agy`)** usage and rate limits.
