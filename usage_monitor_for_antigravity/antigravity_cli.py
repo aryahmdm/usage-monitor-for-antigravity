@@ -56,7 +56,7 @@ _EXTENSION_DIRS: list[tuple[str, Path]] = [
 _EXTENSION_PREFIXES = ('google.', 'gemini', 'antigravity')
 
 CHANGELOG_URL = 'https://antigravity.google/docs'
-PROJECT_URL = 'https://github.com/jens-duttke/usage-monitor-for-claude'
+PROJECT_URL = 'https://github.com/aryahmdm/usage-monitor-for-antigravity'
 
 __all__ = [
     'CLAUDE_CLI_PATH', 'ANTIGRAVITY_CLI_PATH', 'CHANGELOG_URL', 'PROJECT_URL',
