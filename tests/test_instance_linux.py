@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 if sys.platform == 'win32':
     raise unittest.SkipTest('Linux single-instance guard is not used on Windows')
 
-import usage_monitor_for_claude.platforms.instance_linux as si  # noqa: E402
+import usage_monitor_for_antigravity.platforms.instance_linux as si  # noqa: E402
 
 
 class _LockTestCase(unittest.TestCase):

@@ -13,7 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from usage_monitor_for_claude.instance_id import config_dir_suffix, effective_config_dir, is_default_config_dir, parse_config_dir
+from usage_monitor_for_antigravity.instance_id import config_dir_suffix, effective_config_dir, is_default_config_dir, parse_config_dir
 
 
 class TestParseConfigDir(unittest.TestCase):

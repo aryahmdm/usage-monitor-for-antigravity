@@ -1,6 +1,5 @@
 <!--
-Thanks for contributing! This project is developed with Claude Code.
-See `.claude/CLAUDE.md` for the full conventions.
+Thanks for contributing!
 -->
 
 ## Summary
@@ -9,17 +8,14 @@ See `.claude/CLAUDE.md` for the full conventions.
 
 ## Workflow checklist
 
-- [ ] Read [`.claude/CLAUDE.md`](../blob/main/.claude/CLAUDE.md) and followed the project conventions
-- [ ] Ran the `/review` slash command on all staged changes (code, tests, documentation)
-- [ ] Used `/commit-message` to generate the commit message(s)
-- [ ] Ran the full test suite: `python -m unittest discover -s tests`
+- [ ] Tested locally on Windows and/or Linux
+- [ ] Ran the unit test suite: `python -m unittest tests/test_app.py tests/test_tray_icon.py tests/test_docs_links.py`
 
 ## User-facing changes
 
-<!-- Tick all that apply, then update the listed files. Skip this section for internal-only changes.
-The CHANGELOG entry is added by the maintainer on merge - you don't need to edit it. -->
+<!-- Tick all that apply, then update the listed files. Skip this section for internal-only changes. -->
 
-- [ ] [`README.md`](../blob/main/README.md) feature list updated
+- [ ] [`README.md`](../blob/main/README.md) updated
 - [ ] [`docs/configuration.md`](../blob/main/docs/configuration.md) updated (if configuration changed)
 - [ ] Locale files in [`locale/`](../blob/main/locale/) updated (if user-visible strings changed)
 

@@ -2,7 +2,7 @@
 Build Script
 =============
 
-Builds a standalone EXE for Usage Monitor for Claude using PyInstaller and code
+Builds a standalone EXE for Usage Monitor for Antigravity using PyInstaller and code
 signs it when a certificate is configured.
 
 Signing is optional. Without a `signing.env` beside this script the build
@@ -14,7 +14,7 @@ Usage:
     python build.py
 
 Produces:
-    dist/UsageMonitorForClaude.exe
+    dist/UsageMonitorForAntigravity.exe
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 DIST = ROOT / 'dist'
-SPEC = ROOT / 'usage_monitor_for_claude.spec'
+SPEC = ROOT / 'usage_monitor_for_antigravity.spec'
 SIGNING_CONFIG = ROOT / 'signing.env'
 
 
@@ -35,7 +35,7 @@ def build() -> None:
     cmd = [sys.executable, '-m', 'PyInstaller', '--clean', '--noconfirm', str(SPEC)]
     subprocess.check_call(cmd, cwd=str(ROOT))
 
-    exe = DIST / 'UsageMonitorForClaude.exe'
+    exe = DIST / 'UsageMonitorForAntigravity.exe'
     if not exe.exists():
         print('\nBuild failed - EXE not found.')
         sys.exit(1)
@@ -58,64 +58,63 @@ def _sign(exe: Path) -> None:
     is configured, because the cause is not knowable here: a mistyped PIN fails
     exactly like a timestamp server that did not answer, and a second try costs
     one more PIN prompt. Neither message therefore names a cause - signtool's
-    own output does that.
-
-    Parameters
-    ----------
-    exe : Path
-        The freshly built executable.
+    own output on stdout is what says why.
     """
-    config = _signing_config()
-    if config is None:
-        print('\nNo signing.env - the EXE stays unsigned.')
+    config = _read_signing_config()
+    if not config:
         return
 
     signtool = _signtool()
+    thumbprint = config['SIGNING_THUMBPRINT']
     timestamp_urls = [config['SIGNING_TIMESTAMP_URL']]
-    fallback = config.get('SIGNING_TIMESTAMP_FALLBACK_URL')
+    fallback = config.get('SIGNING_FALLBACK_TIMESTAMP_URL')
     if fallback:
         timestamp_urls.append(fallback)
 
-    print('\nSigning the EXE - the token asks for its PIN ...')
-    for attempt, url in enumerate(timestamp_urls, start=1):
-        if attempt > 1:
-            print(f'\nTrying again through {url} - the token asks for its PIN once more ...')
-
-        cmd = [str(signtool), 'sign', '/sha1', config['SIGNING_THUMBPRINT'], '/fd', 'SHA256', '/tr', url, '/td', 'SHA256', str(exe)]
-        if subprocess.call(cmd) == 0:
-            _verify(exe, signtool)
+    for i, timestamp_url in enumerate(timestamp_urls):
+        attempt = f' (attempt {i + 1}/{len(timestamp_urls)})' if len(timestamp_urls) > 1 else ''
+        print(f'\nCode signing {exe.name}{attempt} ...')
+        cmd = [
+            str(signtool), 'sign',
+            '/fd', 'sha256',
+            '/sha1', thumbprint,
+            '/tr', timestamp_url,
+            '/td', 'sha256',
+            str(exe),
+        ]
+        result = subprocess.run(cmd)
+        if result.returncode == 0:
+            print('\nVerifying signature ...')
+            verify = subprocess.run([str(signtool), 'verify', '/pa', str(exe)])
+            if verify.returncode != 0:
+                print('\nSignature verification failed.')
+                sys.exit(1)
             return
 
-        print(f'Signing through {url} failed.')
-
-    print("Signing failed - signtool's message above says why: a wrong PIN, an unmatched thumbprint, or a timestamp server that did not answer.")
+    print('\nCode signing failed.')
     sys.exit(1)
 
 
-def _signing_config() -> dict[str, str] | None:
+def _read_signing_config() -> dict[str, str] | None:
     """
-    Read the KEY=value pairs from `signing.env`.
+    Read the local `signing.env` file.
 
     Returns
     -------
     dict[str, str] | None
-        The configuration, or None when the file does not exist.
+        The configuration, or `None` when no `signing.env` exists.
     """
-    if not SIGNING_CONFIG.exists():
+    if not SIGNING_CONFIG.is_file():
         return None
 
     config: dict[str, str] = {}
-    for raw in SIGNING_CONFIG.read_text(encoding='utf-8').splitlines():
-        line = raw.strip()
+    for line in SIGNING_CONFIG.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
         if not line or line.startswith('#'):
             continue
-
-        key, separator, value = line.partition('=')
-        if not separator:
-            print(f'{SIGNING_CONFIG.name}: line is not KEY=value: {line}')
-            sys.exit(1)
-
-        config[key.strip()] = value.strip()
+        key, sep, value = line.partition('=')
+        if sep:
+            config[key.strip()] = value.strip().strip('"').strip("'")
 
     for key in ('SIGNING_THUMBPRINT', 'SIGNING_TIMESTAMP_URL'):
         if not config.get(key):
@@ -147,7 +146,7 @@ def _signtool() -> Path:
         for entry in root.iterdir():
             tool = entry / 'x64' / 'signtool.exe'
             if tool.is_file():
-                candidates.append((_sdk_version(entry.name), tool))
+                candidates.append((_sdk_version(entry.name), tool))\
 
     if not candidates:
         print('signtool.exe not found - install the Windows SDK signing tools.')
@@ -165,28 +164,7 @@ def _sdk_version(name: str) -> tuple[int, ...]:
     return tuple(int(part) for part in parts)
 
 
-def _verify(exe: Path, signtool: Path) -> None:
-    """
-    Prove the signed executable verifies rather than trusting the signing step.
-
-    `/pa` applies the Authenticode policy, so the chain has to reach a root this
-    machine trusts, and `/tw` makes signtool flag a missing timestamp. That a
-    timestamp exists is already settled here: signing runs with `/tr`, and
-    signtool fails the signing step when no timestamp server answers. Without
-    one the signature would stop verifying the day the certificate expires, and
-    a download published a year earlier would count as unsigned.
-
-    Parameters
-    ----------
-    exe : Path
-        The executable that was just signed.
-    signtool : Path
-        The signtool that signed it.
-    """
-    if subprocess.call([str(signtool), 'verify', '/pa', '/tw', str(exe)]) != 0:
-        print('The signed EXE did not verify.')
-        sys.exit(1)
-
-
 if __name__ == '__main__':
     build()
+
+_signing_config = _read_signing_config

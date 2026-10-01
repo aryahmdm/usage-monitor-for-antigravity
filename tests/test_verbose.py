@@ -14,7 +14,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
-from usage_monitor_for_claude.verbose import (
+from usage_monitor_for_antigravity.verbose import (
     _credentials_status,
     _package_version,
     _redact_home,
@@ -236,10 +236,10 @@ class TestPrintStartupDiagnostics(unittest.TestCase):
     def _run(self) -> str:
         buf = io.StringIO()
         with patch('sys.stdout', buf), \
-             patch('usage_monitor_for_claude.verbose.diagnostic_system_rows', return_value=[('OS', 'TestOS')]), \
-             patch('usage_monitor_for_claude.verbose.diagnostic_display_rows', return_value=[('Monitors', '2')]), \
-             patch('usage_monitor_for_claude.verbose.diagnostic_runtime_rows', return_value=[('Toolkit', '1.0')]), \
-             patch('usage_monitor_for_claude.verbose.DIAGNOSTIC_PACKAGES', ('requests',)):
+             patch('usage_monitor_for_antigravity.verbose.diagnostic_system_rows', return_value=[('OS', 'TestOS')]), \
+             patch('usage_monitor_for_antigravity.verbose.diagnostic_display_rows', return_value=[('Monitors', '2')]), \
+             patch('usage_monitor_for_antigravity.verbose.diagnostic_runtime_rows', return_value=[('Toolkit', '1.0')]), \
+             patch('usage_monitor_for_antigravity.verbose.DIAGNOSTIC_PACKAGES', ('requests',)):
             print_startup_diagnostics()
 
         return buf.getvalue()
@@ -253,7 +253,7 @@ class TestPrintStartupDiagnostics(unittest.TestCase):
 
     def test_contains_version(self):
         """Output includes the app version."""
-        from usage_monitor_for_claude import __version__
+        from usage_monitor_for_antigravity import __version__
 
         self.assertIn(__version__, self._run())
 
@@ -284,7 +284,7 @@ class TestPrintRuntimeDiagnostics(unittest.TestCase):
 
         with patch('sys.stdout', buf), \
              patch.dict('sys.modules', {'webview': mock_webview}), \
-             patch('usage_monitor_for_claude.verbose.diagnostic_post_init_rows', return_value=[]):
+             patch('usage_monitor_for_antigravity.verbose.diagnostic_post_init_rows', return_value=[]):
             print_runtime_diagnostics()
 
         output = buf.getvalue()
@@ -299,7 +299,7 @@ class TestPrintRuntimeDiagnostics(unittest.TestCase):
 
         with patch('sys.stdout', buf), \
              patch.dict('sys.modules', {'webview': mock_webview}), \
-             patch('usage_monitor_for_claude.verbose.diagnostic_post_init_rows',
+             patch('usage_monitor_for_antigravity.verbose.diagnostic_post_init_rows',
                    return_value=[('Toolkit runtime', '3.24.52')]):
             print_runtime_diagnostics()
 
@@ -314,7 +314,7 @@ class TestPrintRuntimeDiagnostics(unittest.TestCase):
 
         with patch('sys.stdout', buf), \
              patch.dict('sys.modules', {'webview': mock_webview}), \
-             patch('usage_monitor_for_claude.verbose.diagnostic_post_init_rows', return_value=[]):
+             patch('usage_monitor_for_antigravity.verbose.diagnostic_post_init_rows', return_value=[]):
             print_runtime_diagnostics()
 
         self.assertIn('unknown', buf.getvalue())

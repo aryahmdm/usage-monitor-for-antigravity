@@ -13,13 +13,13 @@ from tempfile import TemporaryDirectory
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from usage_monitor_for_claude.api import (
+from usage_monitor_for_antigravity.api import (
     API_URL_USAGE, _extract_server_message, _merge_scoped_limits, _model_slug, _normalize_prepaid_credits, _parse_retry_after,
     fetch_prepaid_credits, fetch_usage, read_access_token,
 )
-from usage_monitor_for_claude.formatting import expand_popup_fields
-from usage_monitor_for_claude.i18n import LOCALE_DIR
-from usage_monitor_for_claude.instance_id import effective_config_dir
+from usage_monitor_for_antigravity.formatting import expand_popup_fields
+from usage_monitor_for_antigravity.i18n import LOCALE_DIR
+from usage_monitor_for_antigravity.instance_id import effective_config_dir
 
 EN = json.loads((LOCALE_DIR / 'en.json').read_text(encoding='utf-8'))
 
@@ -38,7 +38,7 @@ class TestClaudeConfigDir(unittest.TestCase):
             env = {k: v for k, v in __import__('os').environ.items() if k != 'CLAUDE_CONFIG_DIR'}
             with patch.dict('os.environ', env, clear=True):
                 import importlib
-                import usage_monitor_for_claude.api as api_mod
+                import usage_monitor_for_antigravity.api as api_mod
                 importlib.reload(api_mod)
                 try:
                     expected = (Path.home() / '.claude').resolve()
@@ -52,7 +52,7 @@ class TestClaudeConfigDir(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': tmp}):
                 import importlib
-                import usage_monitor_for_claude.api as api_mod
+                import usage_monitor_for_antigravity.api as api_mod
                 importlib.reload(api_mod)
                 try:
                     self.assertEqual(api_mod.CLAUDE_CONFIG_DIR, Path(tmp).resolve())
@@ -68,7 +68,7 @@ class TestClaudeConfigDir(unittest.TestCase):
             (Path(tmp) / 'sub').mkdir()
             with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': str(Path(tmp) / 'sub' / '..')}):
                 import importlib
-                import usage_monitor_for_claude.api as api_mod
+                import usage_monitor_for_antigravity.api as api_mod
                 importlib.reload(api_mod)
                 try:
                     self.assertEqual(api_mod.CLAUDE_CONFIG_DIR, effective_config_dir())
@@ -80,7 +80,7 @@ class TestClaudeConfigDir(unittest.TestCase):
         """Empty CLAUDE_CONFIG_DIR env var falls back to default."""
         with patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': ''}):
             import importlib
-            import usage_monitor_for_claude.api as api_mod
+            import usage_monitor_for_antigravity.api as api_mod
             importlib.reload(api_mod)
             try:
                 self.assertEqual(api_mod.CLAUDE_CONFIG_DIR, (Path.home() / '.claude').resolve())
@@ -99,7 +99,7 @@ class TestReadAccessToken(unittest.TestCase):
         """Missing credentials file returns None."""
         with TemporaryDirectory() as tmp:
             fake_path = Path(tmp) / 'nonexistent.json'
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', fake_path):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', fake_path):
                 self.assertIsNone(read_access_token())
 
     def test_valid_token(self):
@@ -108,7 +108,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text(json.dumps(creds))
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertEqual(read_access_token(), 'sk-test-123')
 
     def test_malformed_json(self):
@@ -116,7 +116,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text('not json')
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
     def test_missing_oauth_key(self):
@@ -124,7 +124,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text('{"otherKey": {}}')
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
     def test_missing_access_token_key(self):
@@ -133,7 +133,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text(json.dumps(creds))
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
     def test_empty_token_string(self):
@@ -142,7 +142,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text(json.dumps(creds))
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
     def test_read_error_returns_none(self):
@@ -150,7 +150,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text('{"claudeAiOauth": {"accessToken": "sk-test-123"}}')
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file), \
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file), \
                  patch.object(Path, 'read_text', side_effect=PermissionError('locked')):
                 self.assertIsNone(read_access_token())
 
@@ -159,7 +159,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text('{"claudeAiOauth": null}')
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
     def test_non_object_top_level_returns_none(self):
@@ -168,7 +168,7 @@ class TestReadAccessToken(unittest.TestCase):
             with self.subTest(content=content), TemporaryDirectory() as tmp:
                 creds_file = Path(tmp) / 'creds.json'
                 creds_file.write_text(content)
-                with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+                with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                     self.assertIsNone(read_access_token())
 
     def test_non_dict_oauth_value_returns_none(self):
@@ -176,7 +176,7 @@ class TestReadAccessToken(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             creds_file = Path(tmp) / 'creds.json'
             creds_file.write_text('{"claudeAiOauth": "sk-test-123"}')
-            with patch('usage_monitor_for_claude.api.CLAUDE_CREDENTIALS', creds_file):
+            with patch('usage_monitor_for_antigravity.api.CLAUDE_CREDENTIALS', creds_file):
                 self.assertIsNone(read_access_token())
 
 
@@ -184,18 +184,18 @@ class TestReadAccessToken(unittest.TestCase):
 # fetch_usage
 # ---------------------------------------------------------------------------
 
-@patch('usage_monitor_for_claude.api.T', EN)
+@patch('usage_monitor_for_antigravity.api.T', EN)
 class TestFetchUsage(unittest.TestCase):
     """Tests for fetch_usage()."""
 
-    @patch('usage_monitor_for_claude.api.api_headers', return_value=None)
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value=None)
     def test_no_token_returns_error(self, _mock_headers):
         """Missing token returns no_token error."""
         result = fetch_usage()
         self.assertEqual(result, {'error': EN['no_token']})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_success(self, _mock_headers, mock_get):
         """Successful response returns parsed JSON."""
         mock_resp = MagicMock()
@@ -207,8 +207,8 @@ class TestFetchUsage(unittest.TestCase):
         self.assertEqual(result, {'five_hour': {'utilization': 42.0}})
         mock_get.assert_called_once_with(API_URL_USAGE, headers={'Authorization': 'Bearer test'}, timeout=10)
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_connection_error(self, _mock_headers, mock_get):
         """ConnectionError returns connection_error message."""
         import requests
@@ -218,8 +218,8 @@ class TestFetchUsage(unittest.TestCase):
 
         self.assertEqual(result, {'error': EN['connection_error']})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_certificate_error(self, _mock_headers, mock_get):
         """SSLError returns certificate_error, not the generic connection_error it subclasses."""
         import requests
@@ -229,8 +229,8 @@ class TestFetchUsage(unittest.TestCase):
 
         self.assertEqual(result, {'error': EN['certificate_error']})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_401_returns_auth_error(self, _mock_headers, mock_get):
         """HTTP 401 returns auth_error with flag."""
         import requests
@@ -245,8 +245,8 @@ class TestFetchUsage(unittest.TestCase):
         self.assertEqual(result['error'], EN['auth_expired'])
         self.assertTrue(result['auth_error'])
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_server_error_500(self, _mock_headers, mock_get):
         """HTTP 500 returns server_error with status code."""
         import requests
@@ -260,8 +260,8 @@ class TestFetchUsage(unittest.TestCase):
 
         self.assertEqual(result, {'error': EN['server_error'].format(code=500)})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_server_error_503(self, _mock_headers, mock_get):
         """HTTP 503 returns server_error with status code."""
         import requests
@@ -275,8 +275,8 @@ class TestFetchUsage(unittest.TestCase):
 
         self.assertEqual(result, {'error': EN['server_error'].format(code=503)})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_client_http_error(self, _mock_headers, mock_get):
         """Non-5xx, non-401 HTTP error returns http_error with status code."""
         import requests
@@ -290,8 +290,8 @@ class TestFetchUsage(unittest.TestCase):
 
         self.assertEqual(result, {'error': EN['http_error'].format(code=403)})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_http_error_without_response(self, _mock_headers, mock_get):
         """HTTPError with response=None uses '?' as status code."""
         import requests
@@ -302,8 +302,8 @@ class TestFetchUsage(unittest.TestCase):
         self.assertEqual(result, {'error': EN['http_error'].format(code='?')})
         self.assertNotIn('auth_error', result)
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_generic_exception(self, _mock_headers, mock_get):
         """Unexpected exception returns connection_error message."""
         mock_get.side_effect = RuntimeError('unexpected')
@@ -312,8 +312,8 @@ class TestFetchUsage(unittest.TestCase):
 
         self.assertEqual(result, {'error': EN['connection_error']})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_only_calls_usage_url(self, _mock_headers, mock_get):
         """Verify the request goes exclusively to API_URL_USAGE."""
         mock_resp = MagicMock()
@@ -330,12 +330,12 @@ class TestFetchUsage(unittest.TestCase):
 # 429 / rate limit handling
 # ---------------------------------------------------------------------------
 
-@patch('usage_monitor_for_claude.api.T', EN)
+@patch('usage_monitor_for_antigravity.api.T', EN)
 class TestFetchUsageRateLimit(unittest.TestCase):
     """Tests for HTTP 429 rate-limit handling in fetch_usage()."""
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_429_returns_rate_limited_flag(self, _mock_headers, mock_get):
         """HTTP 429 sets rate_limited flag."""
         import requests
@@ -351,8 +351,8 @@ class TestFetchUsageRateLimit(unittest.TestCase):
         self.assertTrue(result['rate_limited'])
         self.assertEqual(result['error'], EN['http_error'].format(code=429))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_429_with_retry_after(self, _mock_headers, mock_get):
         """HTTP 429 with Retry-After header includes retry_after in result."""
         import requests
@@ -368,8 +368,8 @@ class TestFetchUsageRateLimit(unittest.TestCase):
         self.assertEqual(result['retry_after'], 60)
         self.assertTrue(result['rate_limited'])
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_429_with_server_message(self, _mock_headers, mock_get):
         """HTTP 429 with JSON error body includes server_message."""
         import requests
@@ -384,8 +384,8 @@ class TestFetchUsageRateLimit(unittest.TestCase):
 
         self.assertEqual(result['server_message'], 'Rate limited.')
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_429_without_retry_after_header(self, _mock_headers, mock_get):
         """HTTP 429 without Retry-After header omits retry_after from result."""
         import requests
@@ -400,8 +400,8 @@ class TestFetchUsageRateLimit(unittest.TestCase):
 
         self.assertNotIn('retry_after', result)
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_server_message_on_non_429_error(self, _mock_headers, mock_get):
         """Server message is included for non-429 HTTP errors too."""
         import requests
@@ -454,8 +454,8 @@ def _http_error_response(status_code):
 class TestFetchPrepaidCredits(unittest.TestCase):
     """Tests for fetch_prepaid_credits()."""
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_success_returns_normalized_balance(self, _mock_headers, mock_get):
         """A numeric amount returns the normalized balance dict."""
         mock_resp = MagicMock()
@@ -466,8 +466,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         self.assertEqual(result, {'amount_minor': 5597.0, 'currency': 'EUR', 'decimal_places': 2})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_request_targets_the_org_endpoint(self, _mock_headers, mock_get):
         """The organization uuid is the only variable part of the URL."""
         mock_resp = MagicMock()
@@ -482,8 +482,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
             timeout=5,
         )
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_empty_tranches_still_returns_balance(self, _mock_headers, mock_get):
         """Empty tranches / promo_tranches do not affect the balance."""
         mock_resp = MagicMock()
@@ -492,8 +492,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         self.assertEqual(fetch_prepaid_credits(_ORG_UUID), {'amount_minor': 5597.0, 'currency': 'EUR', 'decimal_places': 2})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_null_tranche_money_objects_ignored(self, _mock_headers, mock_get):
         """The null money objects nested in a promo tranche are never read."""
         tranche = {
@@ -506,8 +506,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         self.assertEqual(fetch_prepaid_credits(_ORG_UUID), {'amount_minor': 5597.0, 'currency': 'EUR', 'decimal_places': 2})
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_missing_amount_returns_none(self, _mock_headers, mock_get):
         """A response without an amount means the account has no prepaid credits."""
         mock_resp = MagicMock()
@@ -516,8 +516,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_non_numeric_amount_returns_none(self, _mock_headers, mock_get):
         """A non-numeric amount returns None instead of raising."""
         for amount in ('5597', [], {}, True):
@@ -528,8 +528,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
                 self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_http_errors_return_none(self, _mock_headers, mock_get):
         """HTTP 401, 429 and 500 all return None without raising."""
         for code in (401, 429, 500):
@@ -538,8 +538,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
                 self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_connection_error_returns_none(self, _mock_headers, mock_get):
         """A connection error returns None without raising."""
         import requests
@@ -547,16 +547,16 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_unexpected_exception_returns_none(self, _mock_headers, mock_get):
         """No exception escapes - the caller stores the result without guarding."""
         mock_get.side_effect = RuntimeError('unexpected')
 
         self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_invalid_json_body_returns_none(self, _mock_headers, mock_get):
         """A body that is not JSON returns None without raising."""
         mock_resp = MagicMock()
@@ -565,8 +565,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value={'Authorization': 'Bearer test'})
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value={'Authorization': 'Bearer test'})
     def test_invalid_org_uuid_makes_no_request(self, _mock_headers, mock_get):
         """A uuid that is empty, malformed or path-like is rejected before any request."""
         # The trailing-newline case fails only against the \A...\Z anchors: a $ anchor
@@ -578,8 +578,8 @@ class TestFetchPrepaidCredits(unittest.TestCase):
 
         mock_get.assert_not_called()
 
-    @patch('usage_monitor_for_claude.api.requests.get')
-    @patch('usage_monitor_for_claude.api.api_headers', return_value=None)
+    @patch('usage_monitor_for_antigravity.api.requests.get')
+    @patch('usage_monitor_for_antigravity.api.api_headers', return_value=None)
     def test_no_token_makes_no_request(self, _mock_headers, mock_get):
         """Without a token no request is made and None is returned."""
         self.assertIsNone(fetch_prepaid_credits(_ORG_UUID))

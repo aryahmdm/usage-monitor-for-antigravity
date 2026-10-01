@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 if sys.platform == 'win32':
     raise unittest.SkipTest('Linux backend is not used on Windows')
 
-import usage_monitor_for_claude.platforms.linux as linux  # noqa: E402
+import usage_monitor_for_antigravity.platforms.linux as linux  # noqa: E402
 
 
 class TestNoWindowKwargs(unittest.TestCase):
@@ -392,7 +392,7 @@ class TestAutostart(unittest.TestCase):
     def test_source_run_includes_module(self):
         """Running from source needs the interpreter plus the module."""
         with patch.object(linux.sys, 'executable', '/usr/bin/python3'):
-            self.assertEqual(linux._autostart_command(), '/usr/bin/python3 -m usage_monitor_for_claude')
+            self.assertEqual(linux._autostart_command(), '/usr/bin/python3 -m usage_monitor_for_antigravity')
 
     def test_sync_rewrites_moved_executable(self):
         """A moved executable updates the stored Exec line."""
@@ -593,7 +593,7 @@ class TestImportsWithoutPyGObject(unittest.TestCase):
     def test_backend_imports_and_degrades(self):
         """Every entry point returns its documented fallback instead of raising."""
         result = self._run_without_gi(
-            'from usage_monitor_for_claude.platforms import linux\n'
+            'from usage_monitor_for_antigravity.platforms import linux\n'
             'assert linux.no_window_kwargs() == {}\n'
             "assert linux.system_time_format() in ('24h', '12h')\n"
             'assert linux.get_idle_seconds() == 0.0\n'
@@ -612,7 +612,7 @@ class TestImportsWithoutPyGObject(unittest.TestCase):
     def test_popup_host_imports(self):
         """The popup host must not reach for gi at import time either."""
         result = self._run_without_gi(
-            'from usage_monitor_for_claude.platforms import popup_linux\n'
+            'from usage_monitor_for_antigravity.platforms import popup_linux\n'
             "assert popup_linux.WINDOW_KWARGS['resizable'] is True\n"
             'host = popup_linux.PopupHost(object(), 340)\n'
             'assert host._anchor() is None\n'
@@ -623,7 +623,7 @@ class TestImportsWithoutPyGObject(unittest.TestCase):
     def test_instance_guard_imports(self):
         """The single-instance guard uses fcntl, never gi."""
         result = self._run_without_gi(
-            'from usage_monitor_for_claude.platforms import instance_linux\n'
+            'from usage_monitor_for_antigravity.platforms import instance_linux\n'
             "assert instance_linux._lock_path().name.endswith('.lock')\n",
         )
         self.assertEqual(result.returncode, 0, result.stderr)

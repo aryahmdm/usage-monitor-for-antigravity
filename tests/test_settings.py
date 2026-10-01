@@ -12,12 +12,12 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import MagicMock, patch
 
-import usage_monitor_for_claude.settings as settings_mod
+import usage_monitor_for_antigravity.settings as settings_mod
 
 
 def _load(app_dir: Path, home_dir: Path) -> dict:
     """Call _load_settings with controlled app_dir and home_dir."""
-    fake_file = str(app_dir / 'usage_monitor_for_claude' / 'settings.py')
+    fake_file = str(app_dir / 'usage_monitor_for_antigravity' / 'settings.py')
     with patch.object(settings_mod, '__file__', fake_file), \
          patch.object(Path, 'home', return_value=home_dir), \
          patch.object(settings_mod, 'show_warning_box', MagicMock()):
@@ -57,7 +57,7 @@ class TestLoadSettings(unittest.TestCase):
             config_dir = Path(config_tmp)
             settings = {'bg': '#111111'}
             (config_dir / settings_mod.SETTINGS_FILENAME).write_text(json.dumps(settings), encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp}), \
                  patch.object(settings_mod, 'show_warning_box', MagicMock()):
@@ -71,7 +71,7 @@ class TestLoadSettings(unittest.TestCase):
             claude_dir.mkdir()
             settings = {'bg': '#222222'}
             (claude_dir / settings_mod.SETTINGS_FILENAME).write_text(json.dumps(settings), encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.object(Path, 'home', return_value=Path(home_tmp)), \
                  patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp}), \
@@ -86,7 +86,7 @@ class TestLoadSettings(unittest.TestCase):
             claude_dir.mkdir()
             (claude_dir / settings_mod.SETTINGS_FILENAME).write_text(json.dumps({'bg': '#home'}), encoding='utf-8')
             (Path(config_tmp) / settings_mod.SETTINGS_FILENAME).write_text(json.dumps({'bg': '#custom'}), encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.object(Path, 'home', return_value=Path(home_tmp)), \
                  patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp}), \
@@ -101,7 +101,7 @@ class TestLoadSettings(unittest.TestCase):
             claude_dir.mkdir()
             settings = {'bg': '#333333'}
             (claude_dir / settings_mod.SETTINGS_FILENAME).write_text(json.dumps(settings), encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.object(Path, 'home', return_value=Path(home_tmp)), \
                  patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': str(claude_dir)}), \
@@ -114,7 +114,7 @@ class TestLoadSettings(unittest.TestCase):
         with TemporaryDirectory() as app_tmp, TemporaryDirectory() as config_tmp:
             (Path(app_tmp) / settings_mod.SETTINGS_FILENAME).write_text(json.dumps({'bg': '#app'}), encoding='utf-8')
             (Path(config_tmp) / settings_mod.SETTINGS_FILENAME).write_text(json.dumps({'bg': '#custom'}), encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.dict('os.environ', {'CLAUDE_CONFIG_DIR': config_tmp}), \
                  patch.object(settings_mod, 'show_warning_box', MagicMock()):
@@ -178,7 +178,7 @@ class TestLoadSettings(unittest.TestCase):
         """Malformed JSON triggers a Windows MessageBox."""
         with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
             (Path(app_tmp) / settings_mod.SETTINGS_FILENAME).write_text('{broken', encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             mock_box = MagicMock()
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.object(Path, 'home', return_value=Path(home_tmp)), \
@@ -203,7 +203,7 @@ class TestLoadSettings(unittest.TestCase):
     def test_unreadable_file_returns_empty_dict(self):
         """File that cannot be read returns empty dict."""
         with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.object(Path, 'home', return_value=Path(home_tmp)), \
                  patch.object(settings_mod, 'show_warning_box', MagicMock()), \
@@ -229,7 +229,7 @@ class TestLoadSettings(unittest.TestCase):
         with TemporaryDirectory() as app_tmp, TemporaryDirectory() as home_tmp:
             settings = {'poll_interval': 'not_a_number', 'poll_fast': 30}
             (Path(app_tmp) / settings_mod.SETTINGS_FILENAME).write_text(json.dumps(settings), encoding='utf-8')
-            fake_file = str(Path(app_tmp) / 'usage_monitor_for_claude' / 'settings.py')
+            fake_file = str(Path(app_tmp) / 'usage_monitor_for_antigravity' / 'settings.py')
             mock_box = MagicMock()
             with patch.object(settings_mod, '__file__', fake_file), \
                  patch.object(Path, 'home', return_value=Path(home_tmp)), \
