@@ -1,3 +1,19 @@
+# Usage Monitor for Antigravity v0.1.1 🛠️
+
+Maintenance and bug-fix release addressing a console window flicker issue on Windows during quota updates and background refreshes.
+
+---
+
+## 🐛 Bug Fixes & Enhancements
+
+- **Suppress Console Window Flash on Background Refresh (Windows 11)**:
+  - Fixed an issue where a terminal / command prompt window would briefly flash on screen for a split second every time the application polled or refreshed for quota updates.
+  - Properly configured Win32 `STARTUPINFO` with `STARTF_USESHOWWINDOW` and `wShowWindow = SW_HIDE (0)` combined with `CREATE_NO_WINDOW`.
+  - Redirected standard input (`stdin = subprocess.DEVNULL`) across all background subprocess and CLI invocations (`agy -p /quota`, `netstat`, event commands, and restart routines) to prevent Windows Terminal / OpenConsole from allocating transient console windows.
+  - Added cached singleton `STARTUPINFO` in Win32 backend to improve performance and prevent repetitive object allocations.
+
+---
+
 # Usage Monitor for Antigravity v0.1.0 🚀
 
 The first public release of **Usage Monitor for Antigravity** — a lightweight, zero-configuration system tray application designed to monitor your **Google Antigravity (`agy`)** rate limits, token allowances, and reset timers in real time.

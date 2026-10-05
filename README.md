@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/aryahmdm/usage-monitor-for-antigravity/releases/latest"><b>⬇️ Download Standalone EXE (v0.1.0)</b></a> •
+  <a href="https://github.com/aryahmdm/usage-monitor-for-antigravity/releases/latest"><b>⬇️ Download Standalone EXE (v0.1.1)</b></a> •
   <a href="#features">Features</a> •
   <a href="#how-to-use">How to Use</a> •
   <a href="#building-from-source">Build from Source</a>
