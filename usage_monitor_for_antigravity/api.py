@@ -35,6 +35,7 @@ except ImportError:
 
 from .i18n import T
 from .instance_id import effective_config_dir
+from .platforms import no_window_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -84,8 +85,7 @@ def _read_credentials_file() -> dict[str, Any] | None:
 def refresh_google_oauth_token() -> bool:
     """Refresh the Google OAuth access token using the refresh_token.
 
-    Returns True if successfully refreshed and credentials file was updated.
-    """
+    Returns True if successfully refreshed and credentials file was updated."""
     creds = _read_credentials_file()
     if not creds:
         return False
@@ -139,8 +139,7 @@ def refresh_google_oauth_token() -> bool:
 def read_access_token() -> str | None:
     """Read the Google OAuth access token from ~/.gemini/oauth_creds.json.
 
-    Automatically refreshes if expired.
-    """
+    Automatically refreshes if expired."""
     creds = _read_credentials_file()
     if not creds:
         return None
@@ -262,22 +261,14 @@ def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
         return None
 
     try:
-        startupinfo = None
-        creationflags = 0
-        if sys.platform == 'win32':
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0
-            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
-
         cmd = [agy_path, '-p', '/quota', '--output-format', 'json']
         res = subprocess.run(
             cmd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=15,
-            startupinfo=startupinfo,
-            creationflags=creationflags,
+            **no_window_kwargs(),
         )
         if res.returncode != 0 or not res.stdout.strip():
             log.warning('agy CLI quota returned code %d: %s', res.returncode, res.stderr)
@@ -352,21 +343,14 @@ def _find_listening_ports() -> list[int]:
         system_root = os.environ.get('SystemRoot') or os.environ.get('WINDIR') or r'C:\Windows'
         netstat_path = os.path.join(system_root, 'System32', 'netstat.exe')
         bin_to_run = netstat_path if os.path.exists(netstat_path) else 'netstat'
-        startupinfo = None
-        creationflags = 0
-        if sys.platform == 'win32':
-            startupinfo = subprocess.STARTUPINFO()
-            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            startupinfo.wShowWindow = 0
-            creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000)
 
         out = subprocess.check_output(
             [bin_to_run, '-ano', '-p', 'tcp'],
+            stdin=subprocess.DEVNULL,
             shell=False,
             text=True,
             errors='ignore',
-            startupinfo=startupinfo,
-            creationflags=creationflags,
+            **no_window_kwargs(),
         )
         ports = set()
         for line in out.splitlines():
@@ -549,7 +533,7 @@ def fetch_usage() -> dict[str, Any]:
 
     Multi-tier resolution:
     1. Direct agy CLI JSON query (accurate, official Antigravity quota).
-    2. Local Antigravity Language Server Connect RPC (when IDE is running).
+    2. Local Antigravity RPC probe (when IDE is running).
     3. Local SQLite telemetry tracking (offline).
     """
     token = read_access_token()

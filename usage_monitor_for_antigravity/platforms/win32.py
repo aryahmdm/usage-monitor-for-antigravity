@@ -97,9 +97,20 @@ class _LASTINPUTINFO(ctypes.Structure):
     ]
 
 
+_no_window_startupinfo: subprocess.STARTUPINFO | None = None
+
+
 def no_window_kwargs() -> dict[str, Any]:
     """Return ``subprocess`` keyword arguments that suppress a console window."""
-    return {'creationflags': subprocess.CREATE_NO_WINDOW}
+    global _no_window_startupinfo
+    if _no_window_startupinfo is None:
+        _no_window_startupinfo = subprocess.STARTUPINFO()
+        _no_window_startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        _no_window_startupinfo.wShowWindow = 0  # SW_HIDE
+    return {
+        'creationflags': getattr(subprocess, 'CREATE_NO_WINDOW', 0x08000000),
+        'startupinfo': _no_window_startupinfo,
+    }
 
 
 def show_error_box(message: str, title: str) -> None:

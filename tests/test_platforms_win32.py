@@ -24,7 +24,12 @@ class TestNoWindowKwargs(unittest.TestCase):
         """The console window is suppressed via creationflags."""
         import subprocess
 
-        self.assertEqual(win32.no_window_kwargs(), {'creationflags': subprocess.CREATE_NO_WINDOW})
+        kwargs = win32.no_window_kwargs()
+        self.assertEqual(kwargs.get('creationflags'), subprocess.CREATE_NO_WINDOW)
+        startupinfo = kwargs.get('startupinfo')
+        self.assertIsNotNone(startupinfo)
+        self.assertTrue(bool(startupinfo.dwFlags & subprocess.STARTF_USESHOWWINDOW))
+        self.assertEqual(startupinfo.wShowWindow, 0)
 
 
 class TestSystemTimeFormat(unittest.TestCase):
@@ -489,7 +494,7 @@ class TestCustomConfigDirAutostart(unittest.TestCase):
         win32.set_autostart(True)
 
         name = mock_winreg.SetValueEx.call_args[0][1]
-        self.assertEqual(name, 'UsageMonitorForClaude_abc123def456')
+        self.assertEqual(name, 'UsageMonitorForAntigravity_abc123def456')
 
     @patch.object(win32, 'winreg')
     def test_enable_command_includes_config_dir(self, mock_winreg):
@@ -512,7 +517,7 @@ class TestCustomConfigDirAutostart(unittest.TestCase):
 
         win32.set_autostart(False)
 
-        mock_winreg.DeleteValue.assert_called_once_with(mock_key, 'UsageMonitorForClaude_abc123def456')
+        mock_winreg.DeleteValue.assert_called_once_with(mock_key, 'UsageMonitorForAntigravity_abc123def456')
 
     @patch.object(win32, 'set_autostart')
     @patch.object(win32, 'winreg')

@@ -139,10 +139,12 @@ try:
             # instance extracts to a fresh temp directory instead
             # of reusing the current (soon-to-be-deleted) one.
             env = {k: v for k, v in os.environ.items() if not k.startswith(('_PYI_', '_MEI'))}
-            subprocess.Popen([sys.executable, *passthrough_args], env=env, **no_window_kwargs())
+            subprocess.Popen([sys.executable, *passthrough_args], env=env, stdin=subprocess.DEVNULL, **no_window_kwargs())
         else:
             subprocess.Popen(
-                [sys.executable, '-m', 'usage_monitor_for_antigravity', *passthrough_args], **no_window_kwargs(),
+                [sys.executable, '-m', 'usage_monitor_for_antigravity', *passthrough_args],
+                stdin=subprocess.DEVNULL,
+                **no_window_kwargs(),
             )
 except Exception:
     crash_log(traceback.format_exc())

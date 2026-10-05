@@ -85,6 +85,7 @@ def run_event_command(
             else:
                 subprocess.Popen(
                     command, shell=True, env=env, cwd=working_dir,
+                    stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                     **no_window_kwargs(),
                 )
@@ -103,6 +104,7 @@ def _launch_and_report(command: str, env: dict[str, str], working_dir: Path, rep
     """
     process = subprocess.Popen(
         command, shell=True, env=env, cwd=working_dir,
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, errors='replace',
         **no_window_kwargs(),
@@ -136,4 +138,4 @@ def _show_error_box(command: str, returncode: int, stderr: str) -> None:
     """Show an error message box reporting a failed command and its stderr."""
     detail = stderr.strip() or '(no error output on stderr)'
     message = f'The event command exited with code {returncode}:\n\n{command}\n\n{detail}'
-    show_error_box(message, 'Usage Monitor for Claude - Event Command Failed')
+    show_error_box(message, 'Usage Monitor for Antigravity - Event Command Failed')

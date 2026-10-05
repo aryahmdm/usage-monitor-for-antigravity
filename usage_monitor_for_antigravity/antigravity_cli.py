@@ -47,7 +47,7 @@ def _discover_cli_path() -> Path:
 CLAUDE_CLI_PATH = _discover_cli_path()
 ANTIGRAVITY_CLI_PATH = CLAUDE_CLI_PATH
 
-_EXTENSION_DIRS: list[tuple[str, Path]] = [
+_EXTENSION_DIRS: list[tuple[str, Path]] = [\
     ('VS Code', Path.home() / '.vscode' / 'extensions'),
     ('VS Code Insiders', Path.home() / '.vscode-insiders' / 'extensions'),
     ('Cursor', Path.home() / '.cursor' / 'extensions'),
@@ -209,6 +209,7 @@ def _run_cli(command: list[str], timeout: int) -> subprocess.CompletedProcess[st
     """Run a CLI command and capture its output as UTF-8 text."""
     proc = subprocess.run(
         command,
+        stdin=subprocess.DEVNULL,
         capture_output=True, text=True, encoding='utf-8', errors='replace',
         timeout=timeout, **no_window_kwargs(),
     )
