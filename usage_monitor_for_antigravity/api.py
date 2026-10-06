@@ -86,52 +86,75 @@ def refresh_google_oauth_token() -> bool:
     """Refresh the Google OAuth access token using the refresh_token.
 
     Returns True if successfully refreshed and credentials file was updated."""
-    creds = _read_credentials_file()
-    if not creds:
-        return False
+    creds = _read_credentials_file() or {}
 
     refresh_token_val = creds.get('refresh_token')
-    if not refresh_token_val:
-        log.warning('No refresh token available in oauth_creds.json')
-        return False
-
     client_id = creds.get('client_id') or OAUTH_CLIENT_ID or os.environ.get('ANTIGRAVITY_CLIENT_ID', '')
     client_secret = creds.get('client_secret') or OAUTH_CLIENT_SECRET or os.environ.get('ANTIGRAVITY_CLIENT_SECRET', '')
 
-    if not client_id or not client_secret:
-        log.info('OAuth client_id / client_secret not present; token refresh is handled by agy CLI')
-        return False
+    # Try creds first if client_id and client_secret are provided
+    if client_id and client_secret and refresh_token_val:
+        try:
+            payload = {
+                'client_id': client_id,
+                'client_secret': client_secret,
+                'refresh_token': refresh_token_val,
+                'grant_type': 'refresh_token',
+            }
+            resp = requests.post(GOOGLE_OAUTH_TOKEN_URL, data=payload, timeout=10)
+            if resp.status_code == 200:
+                token_data = resp.json()
+                new_access_token = token_data.get('access_token')
+                expires_in = token_data.get('expires_in', 3600)
+                id_token = token_data.get('id_token')
+                if new_access_token:
+                    creds['access_token'] = new_access_token
+                    creds['token'] = new_access_token
+                    creds['expiry'] = int(time.time()) + int(expires_in)
+                    if id_token:
+                        creds['id_token'] = id_token
+                    ANTIGRAVITY_CREDENTIALS.write_text(json.dumps(creds, indent=2), encoding='utf-8')
+                    log.info('Successfully refreshed Antigravity Google OAuth token')
+                    return True
+        except Exception as exc:
+            log.debug('Google OAuth token refresh via creds failed: %s', exc)
 
-    payload = {
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'refresh_token': refresh_token_val,
-        'grant_type': 'refresh_token',
-    }
-
-    try:
-        resp = requests.post(GOOGLE_OAUTH_TOKEN_URL, data=payload, timeout=10)
-        if resp.status_code == 200:
-            token_data = resp.json()
-            new_access_token = token_data.get('access_token')
-            expires_in = token_data.get('expires_in', 3600)
-            id_token = token_data.get('id_token')
-
-            if new_access_token:
-                creds['access_token'] = new_access_token
-                creds['token'] = new_access_token
-                # Store expiry timestamp
-                creds['expiry'] = int(time.time()) + int(expires_in)
-                if id_token:
-                    creds['id_token'] = id_token
-
-                ANTIGRAVITY_CREDENTIALS.write_text(json.dumps(creds, indent=2), encoding='utf-8')
-                log.info('Successfully refreshed Antigravity Google OAuth token')
-                return True
-        else:
-            log.warning('Google OAuth token refresh failed with code %d: %s', resp.status_code, resp.text)
-    except Exception as exc:
-        log.error('Exception during Google OAuth token refresh: %s', exc)
+    # Fallback to antigravity-acp token configuration if available
+    acp_file = ANTIGRAVITY_CONFIG_DIR / 'antigravity-acp' / 'acp_token.json'
+    if acp_file.exists():
+        try:
+            acp_data = json.loads(acp_file.read_text(encoding='utf-8').strip())
+            c_id = acp_data.get('client_id')
+            c_sec = acp_data.get('client_secret')
+            r_tok = acp_data.get('refresh_token')
+            t_uri = acp_data.get('token_uri') or GOOGLE_OAUTH_TOKEN_URL
+            if c_id and c_sec and r_tok:
+                resp = requests.post(
+                    t_uri,
+                    data={
+                        'client_id': c_id,
+                        'client_secret': c_sec,
+                        'refresh_token': r_tok,
+                        'grant_type': 'refresh_token',
+                    },
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    token_data = resp.json()
+                    new_access_token = token_data.get('access_token')
+                    expires_in = token_data.get('expires_in', 3600)
+                    id_token = token_data.get('id_token')
+                    if new_access_token:
+                        creds['access_token'] = new_access_token
+                        creds['token'] = new_access_token
+                        creds['expiry'] = int(time.time()) + int(expires_in)
+                        if id_token:
+                            creds['id_token'] = id_token
+                        ANTIGRAVITY_CREDENTIALS.write_text(json.dumps(creds, indent=2), encoding='utf-8')
+                        log.info('Successfully refreshed Antigravity Google OAuth token via ACP credentials')
+                        return True
+        except Exception as exc:
+            log.debug('Google OAuth token refresh via ACP failed: %s', exc)
 
     return False
 
@@ -142,10 +165,18 @@ def read_access_token() -> str | None:
     Automatically refreshes if expired."""
     creds = _read_credentials_file()
     if not creds:
-        return None
+        # Check ACP token as fallback
+        acp_file = ANTIGRAVITY_CONFIG_DIR / 'antigravity-acp' / 'acp_token.json'
+        if acp_file.exists():
+            refresh_google_oauth_token()
+            creds = _read_credentials_file()
+        if not creds:
+            return None
 
-    # Check expiration if expiry field is present
     expiry = creds.get('expiry')
+    if not expiry and creds.get('expiry_date'):
+        expiry = int(creds['expiry_date']) // 1000
+
     if expiry and isinstance(expiry, (int, float)):
         # If expired or expiring within 60 seconds, refresh
         if time.time() > (expiry - 60):
@@ -246,100 +277,18 @@ def fetch_prepaid_credits(org_uuid: Any) -> dict[str, Any] | None:
 
 
 def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
-    """Fetch live quota directly from agy CLI in JSON print mode."""
-    now = time.time()
-    if not force and (now - _agy_quota_cache.get('time', 0.0) < 45.0) and _agy_quota_cache.get('data'):
-        return _agy_quota_cache['data']
+    """Deprecated: agy CLI prompt execution is not a quota endpoint.
 
-    agy_path = shutil.which('agy')
-    if not agy_path:
-        default_agy = Path(os.environ.get('LOCALAPPDATA', '')) / 'agy' / 'bin' / 'agy.exe'
-        if default_agy.exists():
-            agy_path = str(default_agy)
-
-    if not agy_path:
-        return None
-
-    try:
-        cmd = [agy_path, '-p', '/quota', '--output-format', 'json']
-        res = subprocess.run(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=15,
-            cwd=str(ANTIGRAVITY_CONFIG_DIR),
-            **no_window_kwargs(),
-        )
-        if res.returncode != 0 or not res.stdout.strip():
-            log.warning('agy CLI quota returned code %d: %s', res.returncode, res.stderr)
-            return None
-
-        data = json.loads(res.stdout)
-        groups = data.get('command', {}).get('data', {}).get('groups', [])
-        if not groups:
-            return None
-
-        usage: dict[str, Any] = {}
-        for g in groups:
-            gname = (g.get('name') or '').lower()
-            for b in g.get('buckets', []):
-                bid = b.get('id', '')
-                rem = b.get('remaining_fraction')
-                if rem is None:
-                    continue
-                rem_float = float(rem)
-                used_pct = round((1.0 - rem_float) * 100.0, 1)
-                rem_pct = round(rem_float * 100.0, 1)
-                reset_time = b.get('reset_time') or ''
-
-                if 'gemini' in gname or 'gemini' in bid:
-                    if '5h' in bid or '5-hour' in (b.get('name') or '').lower() or 'five hour' in (b.get('name') or '').lower():
-                        usage['gemini_5h'] = {
-                            'utilization': used_pct,
-                            'remaining': rem_pct,
-                            'resets_at': reset_time,
-                        }
-                    elif 'weekly' in bid or 'weekly' in (b.get('name') or '').lower():
-                        usage['gemini_weekly'] = {
-                            'utilization': used_pct,
-                            'remaining': rem_pct,
-                            'resets_at': reset_time,
-                        }
-                elif 'claude' in gname or 'gpt' in gname or '3p' in bid:
-                    if '5h' in bid or '5-hour' in (b.get('name') or '').lower() or 'five hour' in (b.get('name') or '').lower():
-                        usage['claude_5h'] = {
-                            'utilization': used_pct,
-                            'remaining': rem_pct,
-                            'resets_at': reset_time,
-                        }
-                    elif 'weekly' in bid or 'weekly' in (b.get('name') or '').lower():
-                        usage['claude_weekly'] = {
-                            'utilization': used_pct,
-                            'remaining': rem_pct,
-                            'resets_at': reset_time,
-                        }
-
-        # Provide aliases for backward compatibility
-        if 'gemini_5h' in usage:
-            usage['gemini_flash'] = usage['gemini_5h']
-        if 'gemini_weekly' in usage:
-            usage['gemini_pro'] = usage['gemini_weekly']
-        if 'claude_5h' in usage:
-            usage['claude_session'] = usage['claude_5h']
-
-        if usage:
-            _agy_quota_cache['time'] = now
-            _agy_quota_cache['data'] = usage
-            return usage
-    except Exception as exc:
-        log.warning('Failed to fetch quota from agy CLI: %s', exc)
-
+    Running ``agy -p /quota`` triggers non-interactive agent turns, which
+    spawns browser OAuth authorization popups when the CLI agent session is unauthenticated,
+    and starts background MCP child processes. Live quota is resolved cleanly
+    via local Antigravity Language Server RPC or SQLite telemetry tracking.
+    """
     return None
 
 
 def _find_listening_ports() -> list[int]:
-    """Find local TCP ports listening on 127.0.0.1 on Windows."""
+    """Find local TCP ports listening on 127.0.0.1 on Windows, prioritizing Antigravity IDE/LSP."""
     if sys.platform == 'win32':
         try:
             import ctypes
@@ -347,6 +296,7 @@ def _find_listening_ports() -> list[int]:
             import socket
 
             iphlpapi = ctypes.windll.iphlpapi
+            kernel32 = ctypes.windll.kernel32
             AF_INET = 2
             TCP_TABLE_OWNER_PID_ALL = 5
             MIB_TCP_STATE_LISTEN = 2
@@ -368,13 +318,27 @@ def _find_listening_ports() -> list[int]:
                 num_entries = ctypes.cast(buf, ctypes.POINTER(ctypes.wintypes.DWORD)).contents.value
                 row_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
                 offset = ctypes.sizeof(ctypes.wintypes.DWORD)
-                ports = set()
+                candidate_ports: list[int] = []
+                other_ports: list[int] = []
                 for i in range(num_entries):
                     row = MIB_TCPROW_OWNER_PID.from_buffer(buf, offset + i * row_size)
                     if row.dwState == MIB_TCP_STATE_LISTEN:
                         if row.dwLocalAddr in (0, 0x0100007F):
-                            ports.add(socket.ntohs(row.dwLocalPort & 0xFFFF))
-                return sorted(ports)
+                            port = socket.ntohs(row.dwLocalPort & 0xFFFF)
+                            pid = row.dwOwningPid
+                            h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                            name = ''
+                            if h:
+                                buf_name = ctypes.create_unicode_buffer(1024)
+                                sz = ctypes.wintypes.DWORD(1024)
+                                if kernel32.QueryFullProcessImageNameW(h, 0, buf_name, ctypes.byref(sz)):
+                                    name = buf_name.value.lower()
+                                kernel32.CloseHandle(h)
+                            if any(k in name for k in ('antigravity', 'language_server', 'code', 'cursor', 'windsurf', 'zed')):
+                                candidate_ports.append(port)
+                            else:
+                                other_ports.append(port)
+                return candidate_ports if candidate_ports else other_ports
         except Exception as exc:
             log.debug('GetExtendedTcpTable failed, falling back to netstat: %s', exc)
 
@@ -408,6 +372,9 @@ def _find_listening_ports() -> list[int]:
 def _probe_local_antigravity_rpc() -> dict[str, Any] | None:
     """Probe local Antigravity Language Server Connect-RPC endpoints."""
     ports = _find_listening_ports()
+    if not ports:
+        return None
+
     payload = {
         'metadata': {
             'ideName': 'antigravity',
@@ -420,13 +387,16 @@ def _probe_local_antigravity_rpc() -> dict[str, Any] | None:
         'Content-Type': 'application/json',
         'Connect-Protocol-Version': '1',
     }
+    token = read_access_token()
+    if token:
+        headers['Authorization'] = f'Bearer {token}'
 
-    high_ports = [p for p in ports if p > 1024 and p < 65535]
-    for port in high_ports[:15]:
+    # Probe up to 5 prioritized candidate ports
+    for port in ports[:5]:
         for scheme in ('http', 'https'):
             url = f'{scheme}://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary'
             try:
-                resp = requests.post(url, json=payload, headers=headers, timeout=0.5, verify=False)
+                resp = requests.post(url, json=payload, headers=headers, timeout=0.2, verify=False)
                 if resp.status_code == 200:
                     data = resp.json()
                     groups = (data.get('response') or {}).get('groups') or []
@@ -571,25 +541,20 @@ def fetch_usage() -> dict[str, Any]:
     """Fetch usage data for Antigravity / Gemini & Claude models.
 
     Multi-tier resolution:
-    1. Direct agy CLI JSON query (accurate, official Antigravity quota).
-    2. Local Antigravity RPC probe (when IDE is running).
-    3. Local SQLite telemetry tracking (offline).
+    1. Local Antigravity Language Server Connect RPC (when IDE is running).
+    2. Local SQLite telemetry tracking (offline / CLI conversations).
+    3. Fallback default active window.
     """
     token = read_access_token()
     if not token and not ANTIGRAVITY_CREDENTIALS.exists():
         return {'error': T.get('no_token', 'No Antigravity credentials found. Sign in via agy.')}
 
-    # Tier 1: Direct agy CLI query
-    cli_usage = _fetch_agy_cli_quota()
-    if cli_usage:
-        return cli_usage
-
-    # Tier 2: Local Antigravity RPC probe
+    # Tier 1: Local Antigravity Language Server RPC probe
     local_rpc = _probe_local_antigravity_rpc()
     if local_rpc:
         return local_rpc
 
-    # Tier 3: Local SQLite telemetry tracking
+    # Tier 2: Local SQLite telemetry tracking
     local_usage = _fetch_local_sqlite_telemetry()
     if local_usage:
         return local_usage
