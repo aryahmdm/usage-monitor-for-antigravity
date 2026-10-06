@@ -97,11 +97,93 @@ class _LASTINPUTINFO(ctypes.Structure):
     ]
 
 
+class _ALLOC_CONSOLE_OPTIONS(ctypes.Structure):
+    _fields_ = [
+        ('mode', ctypes.wintypes.DWORD),
+        ('useShowWindow', ctypes.wintypes.BOOL),
+        ('showWindow', ctypes.wintypes.WORD),
+    ]
+
+
+_console_initialized = False
+
+
+def _ensure_hidden_console() -> None:
+    """Ensure the process has an attached (hidden) console session.
+
+    On Windows, when a GUI application (compiled with console=False / SUBSYSTEM:WINDOWS)
+    runs without an attached console, any subprocess (like agy CLI) that internally
+    spawns console commands (such as cmd.exe or node.exe for MCP servers) will cause
+    Windows to allocate a brand-new console window (conhost.exe), resulting in a visible
+    terminal window flashing on screen every time the application refreshes.
+
+    By attaching to a headless console session (via AllocConsoleWithOptions with
+    ALLOC_CONSOLE_MODE_NO_WINDOW on Windows 11/modern Windows, or AllocConsole + SW_HIDE
+    as fallback), all child and grandchild processes inherit this headless console session
+    instead of allocating a new window.
+    """
+    global _console_initialized
+    if _console_initialized:
+        return
+
+    kernel32 = ctypes.windll.kernel32
+    user32 = ctypes.windll.user32
+
+    # Check if a console window or console already exists
+    hwnd = kernel32.GetConsoleWindow()
+    if hwnd:
+        _console_initialized = True
+        return
+
+    # Method 1: Modern Windows (Windows 11 Build 26100+ / 24H2) has AllocConsoleWithOptions.
+    # This allocates a console session without creating any window, eliminating flicker entirely.
+    if hasattr(kernel32, 'AllocConsoleWithOptions'):
+        try:
+            options = _ALLOC_CONSOLE_OPTIONS()
+            options.mode = 2  # ALLOC_CONSOLE_MODE_NO_WINDOW
+            options.useShowWindow = True
+            options.showWindow = 0  # SW_HIDE
+            result = ctypes.wintypes.DWORD()
+            alloc_fn = kernel32.AllocConsoleWithOptions
+            alloc_fn.argtypes = [
+                ctypes.POINTER(_ALLOC_CONSOLE_OPTIONS),
+                ctypes.POINTER(ctypes.wintypes.DWORD),
+            ]
+            alloc_fn.restype = ctypes.wintypes.LONG
+            hr = alloc_fn(ctypes.byref(options), ctypes.byref(result))
+            if hr == 0:  # S_OK
+                _console_initialized = True
+                return
+        except Exception:
+            pass
+
+    # Method 2: Attach to parent process console if available
+    ATTACH_PARENT_PROCESS = -1
+    try:
+        if kernel32.AttachConsole(ATTACH_PARENT_PROCESS):
+            _console_initialized = True
+            return
+    except Exception:
+        pass
+
+    # Method 3: Fallback for older Windows: AllocConsole + immediate SW_HIDE
+    try:
+        if kernel32.AllocConsole():
+            hwnd = kernel32.GetConsoleWindow()
+            if hwnd:
+                user32.ShowWindow(hwnd, 0)  # SW_HIDE
+    except Exception:
+        pass
+
+    _console_initialized = True
+
+
 _no_window_startupinfo: subprocess.STARTUPINFO | None = None
 
 
 def no_window_kwargs() -> dict[str, Any]:
     """Return ``subprocess`` keyword arguments that suppress a console window."""
+    _ensure_hidden_console()
     global _no_window_startupinfo
     if _no_window_startupinfo is None:
         _no_window_startupinfo = subprocess.STARTUPINFO()
@@ -666,7 +748,9 @@ def autostart_supported() -> bool:
 
 
 def prepare_gui_environment() -> None:
-    """No-op.
+    """Prepare Windows GUI environment.
 
-    The Linux counterpart selects a GTK backend here; Windows has one host.
+    Ensures the process has an attached hidden console session so child and
+    grandchild CLI processes never flash console windows.
     """
+    _ensure_hidden_console()

@@ -31,6 +31,12 @@ class TestNoWindowKwargs(unittest.TestCase):
         self.assertTrue(bool(startupinfo.dwFlags & subprocess.STARTF_USESHOWWINDOW))
         self.assertEqual(startupinfo.wShowWindow, 0)
 
+    def test_prepare_gui_environment_initializes_hidden_console(self):
+        """prepare_gui_environment calls _ensure_hidden_console to suppress window flashes."""
+        with patch.object(win32, '_ensure_hidden_console') as mock_ensure:
+            win32.prepare_gui_environment()
+            mock_ensure.assert_called_once()
+
 
 class TestSystemTimeFormat(unittest.TestCase):
     """Tests for locale-based 12h/24h detection."""

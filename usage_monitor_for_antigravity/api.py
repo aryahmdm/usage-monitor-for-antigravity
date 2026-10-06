@@ -268,6 +268,7 @@ def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
             capture_output=True,
             text=True,
             timeout=15,
+            cwd=str(ANTIGRAVITY_CONFIG_DIR),
             **no_window_kwargs(),
         )
         if res.returncode != 0 or not res.stdout.strip():
@@ -339,6 +340,44 @@ def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
 
 def _find_listening_ports() -> list[int]:
     """Find local TCP ports listening on 127.0.0.1 on Windows."""
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            import ctypes.wintypes
+            import socket
+
+            iphlpapi = ctypes.windll.iphlpapi
+            AF_INET = 2
+            TCP_TABLE_OWNER_PID_ALL = 5
+            MIB_TCP_STATE_LISTEN = 2
+
+            class MIB_TCPROW_OWNER_PID(ctypes.Structure):
+                _fields_ = [
+                    ('dwState', ctypes.wintypes.DWORD),
+                    ('dwLocalAddr', ctypes.wintypes.DWORD),
+                    ('dwLocalPort', ctypes.wintypes.DWORD),
+                    ('dwRemoteAddr', ctypes.wintypes.DWORD),
+                    ('dwRemotePort', ctypes.wintypes.DWORD),
+                    ('dwOwningPid', ctypes.wintypes.DWORD),
+                ]
+
+            size = ctypes.wintypes.DWORD(0)
+            iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)
+            buf = (ctypes.c_byte * size.value)()
+            if iphlpapi.GetExtendedTcpTable(buf, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) == 0:
+                num_entries = ctypes.cast(buf, ctypes.POINTER(ctypes.wintypes.DWORD)).contents.value
+                row_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
+                offset = ctypes.sizeof(ctypes.wintypes.DWORD)
+                ports = set()
+                for i in range(num_entries):
+                    row = MIB_TCPROW_OWNER_PID.from_buffer(buf, offset + i * row_size)
+                    if row.dwState == MIB_TCP_STATE_LISTEN:
+                        if row.dwLocalAddr in (0, 0x0100007F):
+                            ports.add(socket.ntohs(row.dwLocalPort & 0xFFFF))
+                return sorted(ports)
+        except Exception as exc:
+            log.debug('GetExtendedTcpTable failed, falling back to netstat: %s', exc)
+
     try:
         system_root = os.environ.get('SystemRoot') or os.environ.get('WINDIR') or r'C:\Windows'
         netstat_path = os.path.join(system_root, 'System32', 'netstat.exe')

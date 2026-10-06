@@ -4,91 +4,35 @@ Maintenance and bug-fix release addressing a console window flicker issue on Win
 
 ---
 
-## 🐛 Bug Fixes & Enhancements
+## 📋 Full Changelog & Detailed Notes
 
-- **Suppress Console Window Flash on Background Refresh (Windows 11)**:
-  - Fixed an issue where a terminal / command prompt window would briefly flash on screen for a split second every time the application polled or refreshed for quota updates.
-  - Properly configured Win32 `STARTUPINFO` with `STARTF_USESHOWWINDOW` and `wShowWindow = SW_HIDE (0)` combined with `CREATE_NO_WINDOW`.
-  - Redirected standard input (`stdin = subprocess.DEVNULL`) across all background subprocess and CLI invocations (`agy -p /quota`, `netstat`, event commands, and restart routines) to prevent Windows Terminal / OpenConsole from allocating transient console windows.
-  - Added cached singleton `STARTUPINFO` in Win32 backend to improve performance and prevent repetitive object allocations.
-
----
-
-# Usage Monitor for Antigravity v0.1.0 🚀
-
-The first public release of **Usage Monitor for Antigravity** — a lightweight, zero-configuration system tray application designed to monitor your **Google Antigravity (`agy`)** rate limits, token allowances, and reset timers in real time.
-
----
-
-## ✨ Key Features
-
-- **Real-Time System Tray Icon**:
-  - Live progress display showing your current quota percentage.
-  - Dynamic color-coded thresholds (Green -> Orange -> Red) indicating approaching limits.
-  - Hover tooltip displaying exact remaining utilization and reset schedules.
-
-- **Multi-Model Quota Monitoring**:
-  - **Gemini Quotas**: Tracks 5-hour rolling sessions (Gemini Flash) and weekly model allowances (Gemini Pro).
-  - **Claude / 3P Models**: Live tracking of Anthropic Claude and 3rd-party models within Google Antigravity.
-
-- **Intelligent Multi-Tier Quota Resolution**:
-  1. *Direct CLI Integration*: Queries local Antigravity CLI (`agy`) directly for precision quota figures.
-  2. *Connect-RPC Language Server Probe*: Connects to the local Antigravity Language Server RPC when the IDE is running.
-  3. *Local SQLite Telemetry*: Offline session tracking and step counting with rolling reset window projection.
-
-- **Interactive Popup Dashboard**:
-  - Left-click the tray icon to open a sleek, hardware-accelerated WebView2 dashboard.
-  - View individual progress bars, exact reset timestamps, active session steps, and detected IDE installations.
-
-- **Privacy & Security First**:
-  - **100% Offline / Local Operation**: No telemetry, no external trackers, no analytics.
-  - **Auditable**: Complete open-source codebase available for security inspection.
-  - **No Plaintext Secret Storage**: Uses local environment variables or standard OS credentials.
-
-- **Multilingual Support (i18n)**:
-  - 13 bundled languages, including English and Bahasa Indonesia.
+### 🐛 Bug Fixes: Suppress Transient Console Window Flash (Windows 11)
+- **Problem**: 
+  - Every time the application polled or refreshed for quota updates (via `agy -p /quota` CLI or `netstat.exe` Connect-RPC port discovery), a black command prompt / terminal window would briefly pop up on the screen for a fraction of a second.
+  - On Windows 11 with modern console host (*Windows Terminal* / `OpenConsole.exe`), background subprocesses spawned by GUI applications were triggering an interactive window allocation because standard input was unredirected and window visibility flags were incomplete.
+- **Root Cause & Fixes Implemented**:
+  - **`usage_monitor_for_antigravity/platforms/win32.py`**:
+    - Re-architected `no_window_kwargs()` to supply both `creationflags = subprocess.CREATE_NO_WINDOW` (`0x08000000`) and a properly configured `subprocess.STARTUPINFO` object with `dwFlags |= subprocess.STARTF_USESHOWWINDOW` and `wShowWindow = subprocess.SW_HIDE` (`0`).
+    - Introduced a cached singleton `_no_window_startupinfo` to optimize execution performance and eliminate repetitive `STARTUPINFO` object creation on every poll tick.
+  - **`usage_monitor_for_antigravity/api.py`**:
+    - Standardized all `subprocess.run` and `subprocess.check_output` calls (`_fetch_agy_cli_quota` and `_find_listening_ports`) to use `**no_window_kwargs()`.
+    - Explicitly passed `stdin=subprocess.DEVNULL` to disconnect standard input from the system console host, ensuring completely silent background execution.
+  - **`usage_monitor_for_antigravity/antigravity_cli.py`**, **`command.py`**, & **`__main__.py`**:
+    - Added `stdin=subprocess.DEVNULL` to all remaining subprocess and Popen calls (`_run_cli`, user event commands, and app restart routines).
+    - Fixed error dialog titles to accurately display `"Usage Monitor for Antigravity"`.
 
 ---
 
-## 📦 Download & Quick Start
-
-### Windows (Standalone Executable)
-
-1. Download **`UsageMonitorForAntigravity.exe`** from the **Assets** section below.
-2. Run `UsageMonitorForAntigravity.exe`. No installation or Python setup is required.
-3. The application will immediately appear in your Windows notification tray.
-
-> **Note on Windows SmartScreen**: Because this standalone binary is packaged with PyInstaller without an expensive corporate EV certificate, Windows SmartScreen may show an unrecognized app prompt. Click **More info → Run anyway**. You can verify and inspect the entire source code in this repository.
-
-### Running from Source / Linux
-
-Clone this repository and run with Python 3.10+:
-
-```bash
-git clone https://github.com/aryahmdm/usage-monitor-for-antigravity.git
-cd usage-monitor-for-antigravity
-python -m venv .venv
-source .venv/bin/activate   # On Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-python -m usage_monitor_for_antigravity
-```
+### 📦 Maintenance & Build
+- Bumped application package version to `0.1.1` (`usage_monitor_for_antigravity/__init__.py`).
+- Bumped Windows PE version information to `0.1.1.0` (`version_info.py`).
+- Updated download links in `README.md` and release documentation in `RELEASE_NOTES.md`.
+- Updated test suites in `tests/test_platforms_win32.py` and verified all 613 unit tests pass.
+- Rebuilt standalone executable using PyInstaller (`dist/UsageMonitorForAntigravity.exe`).
 
 ---
 
-## 🛠️ Building Standalone Binary
+## 💾 Downloads & Installation
 
-To build the executable yourself from source:
-
-```bash
-python build.py
-```
-
-The resulting standalone executable will be located at `dist/UsageMonitorForAntigravity.exe`.
-
----
-
-## 🙏 Credits & Attribution
-
-- Ported, enhanced, and maintained for **Google Antigravity** by [Arya Maulana](https://github.com/aryahmdm).
-- Originally created by [Jens Duttke](https://github.com/jens-duttke) as [Usage Monitor for Claude](https://github.com/jens-duttke/usage-monitor-for-claude).
-- Released under the [MIT License](LICENSE).
+- **Windows**: Download **`UsageMonitorForAntigravity.exe`** from the **Assets** section below. Portable single-executable, zero setup required.
+- **Source / Linux**: Clone repository and run `python -m usage_monitor_for_antigravity`.
