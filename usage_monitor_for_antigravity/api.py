@@ -59,7 +59,7 @@ OAUTH_CLIENT_SECRET = os.environ.get('ANTIGRAVITY_CLIENT_SECRET', '')
 GOOGLE_OAUTH_TOKEN_URL = 'https://oauth2.googleapis.com/token'
 
 # Cloud Code / Antigravity endpoints
-API_URL_USAGE = 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota'
+API_URL_USAGE = 'https://cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary'
 API_URL_PROFILE = 'https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist'
 API_URL_PREPAID_CREDITS = ''
 
@@ -272,6 +272,107 @@ def fetch_profile() -> dict[str, Any] | None:
 def fetch_prepaid_credits(org_uuid: Any) -> dict[str, Any] | None:
     """Antigravity does not use Anthropic prepaid credits."""
     return None
+
+
+def _extract_server_message(data: Any) -> str | None:
+    return None
+
+
+def _merge_scoped_limits(data: dict[str, Any]) -> dict[str, Any]:
+    return data
+
+
+def _model_slug(name: str) -> str:
+    return re.sub(r'[^a-zA-Z0-9]+', '_', name).strip('_').lower()
+
+
+def _normalize_prepaid_credits(data: Any) -> dict[str, Any] | None:
+    return None
+
+
+def _parse_retry_after(response: Any) -> int | None:
+    return None
+
+
+def _fetch_cloudcode_quota() -> dict[str, Any] | None:
+    """Fetch official quota limits directly from Google Cloud Code / Antigravity API."""
+    token = read_access_token()
+    if not token:
+        return None
+
+    try:
+        resp = requests.post(
+            API_URL_USAGE,
+            headers={
+                'Authorization': f'Bearer {token}',
+                'Content-Type': 'application/json',
+                'User-Agent': 'Antigravity/1.2.13',
+            },
+            json={},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            groups = data.get('groups') or (data.get('response') or {}).get('groups') or []
+            buckets: dict[str, Any] = {}
+            for g in groups:
+                for b in g.get('buckets', []):
+                    bid = b.get('bucketId') or b.get('id')
+                    if bid:
+                        buckets[bid] = b
+
+            if buckets:
+                usage: dict[str, Any] = {}
+                if 'gemini-5h' in buckets:
+                    rem = buckets['gemini-5h'].get('remainingFraction', 1.0)
+                    rem_float = float(rem)
+                    usage['gemini_5h'] = {
+                        'utilization': round((1.0 - rem_float) * 100.0, 1),
+                        'remaining': round(rem_float * 100.0, 1),
+                        'resets_at': buckets['gemini-5h'].get('resetTime'),
+                    }
+                    usage['gemini_flash'] = usage['gemini_5h']
+
+                if 'gemini-weekly' in buckets:
+                    rem = buckets['gemini-weekly'].get('remainingFraction', 1.0)
+                    rem_float = float(rem)
+                    usage['gemini_weekly'] = {
+                        'utilization': round((1.0 - rem_float) * 100.0, 1),
+                        'remaining': round(rem_float * 100.0, 1),
+                        'resets_at': buckets['gemini-weekly'].get('resetTime'),
+                    }
+                    usage['gemini_pro'] = usage['gemini_weekly']
+
+                if '3p-5h' in buckets:
+                    rem = buckets['3p-5h'].get('remainingFraction', 1.0)
+                    rem_float = float(rem)
+                    usage['claude_5h'] = {
+                        'utilization': round((1.0 - rem_float) * 100.0, 1),
+                        'remaining': round(rem_float * 100.0, 1),
+                        'resets_at': buckets['3p-5h'].get('resetTime'),
+                    }
+                    usage['claude_session'] = usage['claude_5h']
+
+                if '3p-weekly' in buckets:
+                    rem = buckets['3p-weekly'].get('remainingFraction', 1.0)
+                    rem_float = float(rem)
+                    usage['claude_weekly'] = {
+                        'utilization': round((1.0 - rem_float) * 100.0, 1),
+                        'remaining': round(rem_float * 100.0, 1),
+                        'resets_at': buckets['3p-weekly'].get('resetTime'),
+                    }
+
+                return usage
+        elif resp.status_code == 401:
+            log.warning('Cloud Code retrieveUserQuotaSummary 401 unauthorized, attempting token refresh')
+            if refresh_google_oauth_token():
+                return _fetch_cloudcode_quota()
+            return {'error': 'Unauthorized', 'auth_error': True}
+    except Exception as exc:
+        log.debug('Failed to fetch quota from Cloud Code: %s', exc)
+
+    return None
+
 
 
 def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
@@ -537,7 +638,14 @@ def fetch_usage() -> dict[str, Any]:
     if not token and not ANTIGRAVITY_CREDENTIALS.exists():
         return {'error': T.get('no_token', 'No Antigravity credentials found. Sign in via agy.')}
 
-    # Tier 1: Local Antigravity Language Server RPC probe
+    # Tier 1: Direct Cloud Code quota API
+    cloud_usage = _fetch_cloudcode_quota()
+    if cloud_usage and 'error' in cloud_usage:
+        return cloud_usage
+    if cloud_usage:
+        return cloud_usage
+
+    # Tier 2: Local Antigravity Language Server RPC probe
     local_rpc = _probe_local_antigravity_rpc()
     if local_rpc:
         return local_rpc
