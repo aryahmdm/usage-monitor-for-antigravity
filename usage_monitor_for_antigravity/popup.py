@@ -246,6 +246,7 @@ class UsagePopup:
 
     WIDTH = 340
     _CHECK_MS = 2000
+    _INSTALL_RESCAN_S = 600
     _INITIAL_HEIGHT = 400
 
     def __init__(self, app: UsageMonitorForClaude) -> None:
@@ -393,6 +394,7 @@ class UsagePopup:
     def _update_loop(self) -> None:
         """Poll for data changes and push updates to the popup."""
         cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
+        last_scan = time.monotonic()
         last_next_poll_time = self.app._next_poll_time
         while self._running:
             time.sleep(self._CHECK_MS / 1000)
@@ -403,8 +405,12 @@ class UsagePopup:
                 next_poll_time = self.app._next_poll_time
                 if snap.version == self._last_version and next_poll_time == last_next_poll_time:
                     continue
-                if snap.version != self._last_version:
+                # Rescanning may launch the CLI (``--version``), and every
+                # launch risks a console window flash, so a pinned popup
+                # rescans at most every _INSTALL_RESCAN_S, not per refresh.
+                if snap.version != self._last_version and time.monotonic() - last_scan >= self._INSTALL_RESCAN_S:
                     cached_installations = [{'name': i.name, 'version': i.version} for i in find_installations()]
+                    last_scan = time.monotonic()
                 data = _snapshot_to_dict(snap, installations=cached_installations, next_poll_time=next_poll_time)
                 self._window.evaluate_js(f'updateData({json.dumps(data)})')
                 # Commit the markers only after a successful push, so a failed

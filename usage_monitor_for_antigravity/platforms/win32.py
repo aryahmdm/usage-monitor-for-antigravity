@@ -127,7 +127,6 @@ def _ensure_hidden_console() -> None:
         return
 
     kernel32 = ctypes.windll.kernel32
-    user32 = ctypes.windll.user32
 
     # Check if a console window or console already exists
     hwnd = kernel32.GetConsoleWindow()
@@ -166,15 +165,10 @@ def _ensure_hidden_console() -> None:
     except Exception:
         pass
 
-    # Method 3: Fallback for older Windows: AllocConsole + immediate SW_HIDE
-    try:
-        if kernel32.AllocConsole():
-            hwnd = kernel32.GetConsoleWindow()
-            if hwnd:
-                user32.ShowWindow(hwnd, 0)  # SW_HIDE
-    except Exception:
-        pass
-
+    # No AllocConsole fallback: it always creates a visible console first (a
+    # full Windows Terminal window when that is the default terminal), which is
+    # exactly the flash this function exists to prevent.  Without a console,
+    # children still start windowless via CREATE_NO_WINDOW in no_window_kwargs.
     _console_initialized = True
 
 

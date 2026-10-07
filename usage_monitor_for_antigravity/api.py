@@ -18,7 +18,6 @@ import os
 import re
 import shutil
 import sqlite3
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -35,7 +34,6 @@ except ImportError:
 
 from .i18n import T
 from .instance_id import effective_config_dir
-from .platforms import no_window_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -311,10 +309,23 @@ def _find_listening_ports() -> list[int]:
                     ('dwOwningPid', ctypes.wintypes.DWORD),
                 ]
 
+            ERROR_INSUFFICIENT_BUFFER = 122
+
+            # The table can grow between the size query and the read, so retry
+            # with the updated size instead of falling back to netstat, which
+            # spawns a process on every refresh.
             size = ctypes.wintypes.DWORD(0)
             iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)
-            buf = (ctypes.c_byte * size.value)()
-            if iphlpapi.GetExtendedTcpTable(buf, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) == 0:
+            ret = ERROR_INSUFFICIENT_BUFFER
+            for _ in range(5):
+                size.value += 4096
+                buf = (ctypes.c_byte * size.value)()
+                ret = iphlpapi.GetExtendedTcpTable(buf, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)
+                if ret != ERROR_INSUFFICIENT_BUFFER:
+                    break
+            if ret != 0:
+                log.debug('GetExtendedTcpTable returned %s', ret)
+            else:
                 num_entries = ctypes.cast(buf, ctypes.POINTER(ctypes.wintypes.DWORD)).contents.value
                 row_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
                 offset = ctypes.sizeof(ctypes.wintypes.DWORD)
@@ -340,33 +351,10 @@ def _find_listening_ports() -> list[int]:
                                 other_ports.append(port)
                 return candidate_ports if candidate_ports else other_ports
         except Exception as exc:
-            log.debug('GetExtendedTcpTable failed, falling back to netstat: %s', exc)
-
-    try:
-        system_root = os.environ.get('SystemRoot') or os.environ.get('WINDIR') or r'C:\Windows'
-        netstat_path = os.path.join(system_root, 'System32', 'netstat.exe')
-        bin_to_run = netstat_path if os.path.exists(netstat_path) else 'netstat'
-
-        out = subprocess.check_output(
-            [bin_to_run, '-ano', '-p', 'tcp'],
-            stdin=subprocess.DEVNULL,
-            shell=False,
-            text=True,
-            errors='ignore',
-            **no_window_kwargs(),
-        )
-        ports = set()
-        for line in out.splitlines():
-            line = line.strip()
-            if 'LISTENING' in line and ('127.0.0.1:' in line or '[::1]:' in line):
-                parts = line.split()
-                if len(parts) >= 2:
-                    match = re.search(r':(\d+)\b', parts[1])
-                    if match:
-                        ports.add(int(match.group(1)))
-        return sorted(ports)
-    except Exception:
+            log.debug('GetExtendedTcpTable failed: %s', exc)
         return []
+
+    return []
 
 
 def _probe_local_antigravity_rpc() -> dict[str, Any] | None:
