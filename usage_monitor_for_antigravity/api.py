@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -34,6 +35,7 @@ except ImportError:
 
 from .i18n import T
 from .instance_id import effective_config_dir
+from .platforms import no_window_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +296,89 @@ def _parse_retry_after(response: Any) -> int | None:
     return None
 
 
+def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
+    """Fetch live quota via ``agy -p /usage --output-format json``.
+
+    This executes the built-in read-only /usage slash command in non-interactive
+    print mode with CREATE_NO_WINDOW, which reads the authenticated keyring
+    session and returns exact real-time quota matching Antigravity and the CLI.
+    """
+    agy_bin = shutil.which('agy') or shutil.which('agy.exe')
+    if not agy_bin:
+        for candidate in (
+            os.path.expanduser(r'~\AppData\Local\agy\bin\agy.exe'),
+            os.path.expanduser(r'~\AppData\Local\Programs\antigravity\resources\bin\agy.exe'),
+        ):
+            if os.path.exists(candidate):
+                agy_bin = candidate
+                break
+
+    if not agy_bin:
+        return None
+
+    try:
+        cmd = [agy_bin, '-p', '/usage', '--output-format', 'json']
+        out = subprocess.check_output(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            text=True,
+            errors='ignore',
+            timeout=10,
+            **no_window_kwargs(),
+        )
+        data = json.loads(out)
+        groups = data.get('command', {}).get('data', {}).get('groups', [])
+        buckets: dict[str, Any] = {}
+        for g in groups:
+            for b in g.get('buckets', []):
+                bid = b.get('id') or b.get('bucketId')
+                if bid:
+                    buckets[bid] = b
+
+        if buckets:
+            usage: dict[str, Any] = {}
+            if 'gemini-5h' in buckets:
+                rem = float(buckets['gemini-5h'].get('remaining_fraction', 1.0))
+                usage['gemini_5h'] = {
+                    'utilization': round((1.0 - rem) * 100.0, 1),
+                    'remaining': round(rem * 100.0, 1),
+                    'resets_at': buckets['gemini-5h'].get('reset_time'),
+                }
+                usage['gemini_flash'] = usage['gemini_5h']
+
+            if 'gemini-weekly' in buckets:
+                rem = float(buckets['gemini-weekly'].get('remaining_fraction', 1.0))
+                usage['gemini_weekly'] = {
+                    'utilization': round((1.0 - rem) * 100.0, 1),
+                    'remaining': round(rem * 100.0, 1),
+                    'resets_at': buckets['gemini-weekly'].get('reset_time'),
+                }
+                usage['gemini_pro'] = usage['gemini_weekly']
+
+            if '3p-5h' in buckets:
+                rem = float(buckets['3p-5h'].get('remaining_fraction', 1.0))
+                usage['claude_5h'] = {
+                    'utilization': round((1.0 - rem) * 100.0, 1),
+                    'remaining': round(rem * 100.0, 1),
+                    'resets_at': buckets['3p-5h'].get('reset_time'),
+                }
+                usage['claude_session'] = usage['claude_5h']
+
+            if '3p-weekly' in buckets:
+                rem = float(buckets['3p-weekly'].get('remaining_fraction', 1.0))
+                usage['claude_weekly'] = {
+                    'utilization': round((1.0 - rem) * 100.0, 1),
+                    'remaining': round(rem * 100.0, 1),
+                    'resets_at': buckets['3p-weekly'].get('reset_time'),
+                }
+
+            return usage
+    except Exception as exc:
+        log.debug('Failed to fetch quota via agy CLI: %s', exc)
+
+    return None
+
+
 def _fetch_cloudcode_quota() -> dict[str, Any] | None:
     """Fetch official quota limits directly from Google Cloud Code / Antigravity API."""
     token = read_access_token()
@@ -371,18 +456,6 @@ def _fetch_cloudcode_quota() -> dict[str, Any] | None:
     except Exception as exc:
         log.debug('Failed to fetch quota from Cloud Code: %s', exc)
 
-    return None
-
-
-
-def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
-    """Deprecated: agy CLI prompt execution is not a quota endpoint.
-
-    Running ``agy -p /quota`` triggers non-interactive agent turns, which
-    spawns browser OAuth authorization popups when the CLI agent session is unauthenticated,
-    and starts background MCP child processes. Live quota is resolved cleanly
-    via local Antigravity Language Server RPC or SQLite telemetry tracking.
-    """
     return None
 
 
@@ -630,27 +703,34 @@ def fetch_usage() -> dict[str, Any]:
     """Fetch usage data for Antigravity / Gemini & Claude models.
 
     Multi-tier resolution:
-    1. Local Antigravity Language Server Connect RPC (when IDE is running).
-    2. Local SQLite telemetry tracking (offline / CLI conversations).
-    3. Fallback default active window.
+    1. Real-time agy CLI read-only /usage slash command (exact authenticated quota).
+    2. Direct Cloud Code quota API.
+    3. Local Antigravity Language Server Connect RPC (when IDE is running).
+    4. Local SQLite telemetry tracking (offline / CLI conversations).
+    5. Fallback default active window.
     """
     token = read_access_token()
     if not token and not ANTIGRAVITY_CREDENTIALS.exists():
         return {'error': T.get('no_token', 'No Antigravity credentials found. Sign in via agy.')}
 
-    # Tier 1: Direct Cloud Code quota API
+    # Tier 1: Real-time agy CLI read-only /usage slash command
+    agy_usage = _fetch_agy_cli_quota()
+    if agy_usage:
+        return agy_usage
+
+    # Tier 2: Direct Cloud Code quota API
     cloud_usage = _fetch_cloudcode_quota()
     if cloud_usage and 'error' in cloud_usage:
         return cloud_usage
     if cloud_usage:
         return cloud_usage
 
-    # Tier 2: Local Antigravity Language Server RPC probe
+    # Tier 3: Local Antigravity Language Server RPC probe
     local_rpc = _probe_local_antigravity_rpc()
     if local_rpc:
         return local_rpc
 
-    # Tier 2: Local SQLite telemetry tracking
+    # Tier 4: Local SQLite telemetry tracking
     local_usage = _fetch_local_sqlite_telemetry()
     if local_usage:
         return local_usage
