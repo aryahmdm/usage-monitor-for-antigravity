@@ -1,7 +1,7 @@
 # Usage Monitor for Antigravity
 
 <p align="center">
-  <img src="assets/social-preview.png" alt="Usage Monitor for Antigravity Social Banner" width="100%">
+  <img src="assets/social-preview.webp" alt="Usage Monitor for Antigravity Social Banner" width="100%">
 </p>
 
 <p align="center">
