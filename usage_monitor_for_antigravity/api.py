@@ -215,7 +215,7 @@ def fetch_profile() -> dict[str, Any] | None:
                 headers={
                     'Authorization': f'Bearer {token}',
                     'Content-Type': 'application/json',
-                    'User-Agent': 'Antigravity/1.2.13',
+                    'User-Agent': 'Antigravity/1.4.3',
                 },
                 json={},
                 timeout=5,
@@ -297,12 +297,15 @@ def _parse_retry_after(response: Any) -> int | None:
 
 
 def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
-    """Fetch live quota via ``agy -p /usage --output-format json``.
+    """Deprecated: agy CLI slash command execution spawns background Language Server processes.
 
-    This executes the built-in read-only /usage slash command in non-interactive
-    print mode with CREATE_NO_WINDOW, which reads the authenticated keyring
-    session and returns exact real-time quota matching Antigravity and the CLI.
+    Executing ``agy -p /usage`` launches an internal language server daemon and sidecars,
+    which causes console window flashes on Windows. Quota is fetched cleanly
+    via direct Cloud Code HTTPS API or local Language Server Connect-RPC.
     """
+    if not force:
+        return None
+
     agy_bin = shutil.which('agy') or shutil.which('agy.exe')
     if not agy_bin:
         for candidate in (
@@ -372,6 +375,16 @@ def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
                     'resets_at': buckets['3p-weekly'].get('reset_time'),
                 }
 
+            if 'gemini_5h' in usage:
+                usage['five_hour'] = usage['gemini_5h']
+            elif 'claude_5h' in usage:
+                usage['five_hour'] = usage['claude_5h']
+
+            if 'gemini_weekly' in usage:
+                usage['seven_day'] = usage['gemini_weekly']
+            elif 'claude_weekly' in usage:
+                usage['seven_day'] = usage['claude_weekly']
+
             return usage
     except Exception as exc:
         log.debug('Failed to fetch quota via agy CLI: %s', exc)
@@ -391,7 +404,7 @@ def _fetch_cloudcode_quota() -> dict[str, Any] | None:
             headers={
                 'Authorization': f'Bearer {token}',
                 'Content-Type': 'application/json',
-                'User-Agent': 'Antigravity/1.2.13',
+                'User-Agent': 'Antigravity/1.4.3',
             },
             json={},
             timeout=5,
@@ -446,6 +459,17 @@ def _fetch_cloudcode_quota() -> dict[str, Any] | None:
                         'remaining': round(rem_float * 100.0, 1),
                         'resets_at': buckets['3p-weekly'].get('resetTime'),
                     }
+
+                # Legacy aliases for compatibility with cache and formatters
+                if 'gemini_5h' in usage:
+                    usage['five_hour'] = usage['gemini_5h']
+                elif 'claude_5h' in usage:
+                    usage['five_hour'] = usage['claude_5h']
+
+                if 'gemini_weekly' in usage:
+                    usage['seven_day'] = usage['gemini_weekly']
+                elif 'claude_weekly' in usage:
+                    usage['seven_day'] = usage['claude_weekly']
 
                 return usage
         elif resp.status_code == 401:
@@ -600,6 +624,14 @@ def _probe_local_antigravity_rpc() -> dict[str, Any] | None:
                                 'remaining': round(rem * 100.0, 1),
                                 'resets_at': buckets['3p-weekly'].get('resetTime'),
                             }
+                        if 'gemini_5h' in usage:
+                            usage['five_hour'] = usage['gemini_5h']
+                        elif 'claude_5h' in usage:
+                            usage['five_hour'] = usage['claude_5h']
+                        if 'gemini_weekly' in usage:
+                            usage['seven_day'] = usage['gemini_weekly']
+                        elif 'claude_weekly' in usage:
+                            usage['seven_day'] = usage['claude_weekly']
                         if usage:
                             return usage
             except Exception:
@@ -688,6 +720,14 @@ def _fetch_local_sqlite_telemetry() -> dict[str, Any] | None:
                 'utilization': pro_pct,
                 'resets_at': weekly_reset,
             },
+            'five_hour': {
+                'utilization': flash_pct,
+                'resets_at': reset_time,
+            },
+            'seven_day': {
+                'utilization': pro_pct,
+                'resets_at': weekly_reset,
+            },
             'session': {
                 'utilization': flash_pct,
                 'resets_at': reset_time,
@@ -703,37 +743,36 @@ def fetch_usage() -> dict[str, Any]:
     """Fetch usage data for Antigravity / Gemini & Claude models.
 
     Multi-tier resolution:
-    1. Real-time agy CLI read-only /usage slash command (exact authenticated quota).
-    2. Direct Cloud Code quota API.
-    3. Local Antigravity Language Server Connect RPC (when IDE is running).
-    4. Local SQLite telemetry tracking (offline / CLI conversations).
-    5. Fallback default active window.
+    1. Direct Cloud Code quota API (fast HTTP, zero console subprocesses).
+    2. Local Antigravity Language Server Connect RPC (when IDE is running).
+    3. Local SQLite telemetry tracking (offline / CLI conversations).
+    4. Fallback default active window.
     """
     token = read_access_token()
     if not token and not ANTIGRAVITY_CREDENTIALS.exists():
         return {'error': T.get('no_token', 'No Antigravity credentials found. Sign in via agy.')}
 
-    # Tier 1: Real-time agy CLI read-only /usage slash command
-    agy_usage = _fetch_agy_cli_quota()
-    if agy_usage:
-        return agy_usage
-
-    # Tier 2: Direct Cloud Code quota API
+    # Tier 1: Direct Cloud Code quota API (fast, pure HTTP, no window flicker)
     cloud_usage = _fetch_cloudcode_quota()
     if cloud_usage and 'error' in cloud_usage:
         return cloud_usage
     if cloud_usage:
         return cloud_usage
 
-    # Tier 3: Local Antigravity Language Server RPC probe
+    # Tier 2: Local Antigravity Language Server RPC probe
     local_rpc = _probe_local_antigravity_rpc()
     if local_rpc:
         return local_rpc
 
-    # Tier 4: Local SQLite telemetry tracking
+    # Tier 3: Local SQLite telemetry tracking
     local_usage = _fetch_local_sqlite_telemetry()
     if local_usage:
         return local_usage
+
+    # Tier 4: Explicit forced agy CLI check (only if force requested)
+    agy_usage = _fetch_agy_cli_quota(force=False)
+    if agy_usage:
+        return agy_usage
 
     # Fallback default active window
     now = datetime.datetime.now(datetime.timezone.utc)
@@ -745,7 +784,17 @@ def fetch_usage() -> dict[str, Any]:
             'remaining': 100.0,
             'resets_at': reset_5h,
         },
+        'gemini_flash': {
+            'utilization': 0.0,
+            'remaining': 100.0,
+            'resets_at': reset_5h,
+        },
         'gemini_weekly': {
+            'utilization': 0.0,
+            'remaining': 100.0,
+            'resets_at': reset_7d,
+        },
+        'gemini_pro': {
             'utilization': 0.0,
             'remaining': 100.0,
             'resets_at': reset_7d,
@@ -755,17 +804,27 @@ def fetch_usage() -> dict[str, Any]:
             'remaining': 100.0,
             'resets_at': reset_5h,
         },
+        'claude_session': {
+            'utilization': 0.0,
+            'remaining': 100.0,
+            'resets_at': reset_5h,
+        },
         'claude_weekly': {
             'utilization': 0.0,
             'remaining': 100.0,
             'resets_at': reset_7d,
         },
-        'gemini_flash': {
+        'five_hour': {
             'utilization': 0.0,
             'resets_at': reset_5h,
         },
-        'gemini_pro': {
+        'seven_day': {
             'utilization': 0.0,
             'resets_at': reset_7d,
+        },
+        'session': {
+            'utilization': 0.0,
+            'resets_at': reset_5h,
+            'steps': 0,
         },
     }

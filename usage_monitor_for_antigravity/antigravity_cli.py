@@ -47,7 +47,7 @@ def _discover_cli_path() -> Path:
 CLAUDE_CLI_PATH = _discover_cli_path()
 ANTIGRAVITY_CLI_PATH = CLAUDE_CLI_PATH
 
-_EXTENSION_DIRS: list[tuple[str, Path]] = [\
+_EXTENSION_DIRS: list[tuple[str, Path]] = [
     ('VS Code', Path.home() / '.vscode' / 'extensions'),
     ('VS Code Insiders', Path.home() / '.vscode-insiders' / 'extensions'),
     ('Cursor', Path.home() / '.cursor' / 'extensions'),
@@ -129,47 +129,76 @@ def find_installations() -> list[ClaudeInstallation]:
 
 
 def refresh_token() -> RefreshResult:
-    """Refresh the Google OAuth token and check for CLI updates."""
+    """Refresh the Google OAuth token."""
     from .api import refresh_google_oauth_token
 
-    curr_version = cli_version(CLAUDE_CLI_PATH) if CLAUDE_CLI_PATH.is_file() else ''
-
-    # First perform Google OAuth refresh
-    auth_refreshed = refresh_google_oauth_token()
-
-    # Try agy update if executable exists
-    if CLAUDE_CLI_PATH.is_file() and 'agy' in CLAUDE_CLI_PATH.name.lower():
-        try:
-            proc = _run_cli([str(CLAUDE_CLI_PATH), 'update'], timeout=30)
-            output = (proc.stdout or '') + (proc.stderr or '')
-            new_version = cli_version(CLAUDE_CLI_PATH)
-            updated = bool(new_version and curr_version and new_version != curr_version)
+    # For Antigravity (agy), perform pure HTTP token refresh without launching CLI subprocesses
+    if 'agy' in CLAUDE_CLI_PATH.name.lower():
+        curr_version = cli_version(CLAUDE_CLI_PATH) if CLAUDE_CLI_PATH.is_file() else ''
+        auth_refreshed = refresh_google_oauth_token()
+        if auth_refreshed:
             return RefreshResult(
                 success=True,
-                updated=updated,
+                updated=False,
                 old_version=curr_version,
-                new_version=new_version or curr_version,
+                new_version=curr_version,
                 error='',
             )
-        except Exception:
-            pass
-
-    if auth_refreshed:
         return RefreshResult(
-            success=True,
+            success=False,
             updated=False,
             old_version=curr_version,
             new_version=curr_version,
-            error='',
+            error='Token refresh failed',
         )
 
-    return RefreshResult(
-        success=False,
-        updated=False,
-        old_version=curr_version,
-        new_version=curr_version,
-        error='Token refresh failed',
-    )
+    # Legacy Claude fallback (for tests and claude compatibility)
+    if not CLAUDE_CLI_PATH.is_file():
+        return RefreshResult(
+            success=False,
+            updated=False,
+            old_version='',
+            new_version='',
+            error='CLI not found',
+        )
+
+    curr_version = cli_version(CLAUDE_CLI_PATH)
+    try:
+        proc = _run_cli([str(CLAUDE_CLI_PATH), 'update'], timeout=60)
+        output = (proc.stdout or '') + (proc.stderr or '')
+        new_version = cli_version(CLAUDE_CLI_PATH)
+        updated = bool(new_version and curr_version and new_version != curr_version)
+        if proc.returncode != 0:
+            return RefreshResult(
+                success=False,
+                updated=False,
+                old_version=curr_version,
+                new_version=curr_version,
+                error=output[:200].strip() or 'Unknown error',
+            )
+        return RefreshResult(
+            success=True,
+            updated=updated,
+            old_version=curr_version,
+            new_version=new_version or curr_version,
+            error='',
+        )
+    except subprocess.TimeoutExpired:
+        return RefreshResult(
+            success=False,
+            updated=False,
+            old_version=curr_version,
+            new_version=curr_version,
+            error='Timeout',
+        )
+    except OSError as exc:
+        return RefreshResult(
+            success=False,
+            updated=False,
+            old_version=curr_version,
+            new_version=curr_version,
+            error=str(exc),
+        )
 
 
 def cli_version(path: Path) -> str:
