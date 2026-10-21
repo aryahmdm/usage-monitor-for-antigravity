@@ -223,6 +223,23 @@ class TestExpandPopupFields(unittest.TestCase):
         result = expand_popup_fields(['*'], usage)
         self.assertEqual(result, ['five_hour'])
 
+    def test_antigravity_popup_fields_excludes_legacy_aliases(self):
+        """When Antigravity model quotas are present, legacy aliases (five_hour, seven_day, session) are excluded."""
+        usage = {
+            'gemini_5h': {'utilization': 3.2, 'resets_at': '2026-10-21T13:22:08Z'},
+            'gemini_weekly': {'utilization': 8.1, 'resets_at': '2026-10-26T07:30:50Z'},
+            'claude_5h': {'utilization': 0.0, 'resets_at': '2026-10-21T13:35:39Z'},
+            'claude_weekly': {'utilization': 0.0, 'resets_at': '2026-10-28T08:35:39Z'},
+            'gemini_flash': {'utilization': 3.2, 'resets_at': '2026-10-21T13:22:08Z'},
+            'gemini_pro': {'utilization': 8.1, 'resets_at': '2026-10-26T07:30:50Z'},
+            'claude_session': {'utilization': 0.0, 'resets_at': '2026-10-21T13:35:39Z'},
+            'five_hour': {'utilization': 3.2, 'resets_at': '2026-10-21T13:22:08Z'},
+            'seven_day': {'utilization': 8.1, 'resets_at': '2026-10-26T07:30:50Z'},
+            'session': {'utilization': 3.2, 'resets_at': '2026-10-21T13:22:08Z'},
+        }
+        result = expand_popup_fields(['*'], usage)
+        self.assertEqual(result, ['gemini_5h', 'gemini_weekly', 'claude_5h', 'claude_weekly'])
+
     def test_missing_fields_skipped(self):
         """Explicitly listed fields missing from API are skipped."""
         usage = self._usage(five_hour=10)

@@ -100,6 +100,7 @@ def _snapshot_to_dict(
             if not entry or entry.get('utilization') is None:
                 continue
             pct = entry.get('utilization', 0) or 0
+            rem = entry.get('remaining', round(100.0 - pct, 1))
             resets_at = entry.get('resets_at', '')
             time_pct = elapsed_pct(resets_at, period) if period else None
             warn = pct >= 100 or (time_pct is not None and pct > time_pct)
@@ -109,6 +110,7 @@ def _snapshot_to_dict(
                 'key': field,
                 'label': label,
                 'pct_text': f'{pct:.0f}%',
+                'title': f'{pct:.0f}% used ({rem:.0f}% remaining)',
                 'fill_pct': max(0.0, min(1.0, pct / 100)),
                 'warn': warn,
                 'reset_text': time_until(resets_at) if resets_at else '',

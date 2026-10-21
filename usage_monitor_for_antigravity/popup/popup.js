@@ -356,6 +356,7 @@ function createBarElement(entry) {
     const div = document.createElement('div');
     div.className = 'usage-entry';
     div.dataset.key = entry.key;
+    if (entry.title) div.title = entry.title;
 
     const header = document.createElement('div');
     header.className = 'bar-header';
@@ -402,6 +403,7 @@ function createBarElement(entry) {
 
 function updateBarElement(div, entry) {
     div.querySelector('.bar-pct').textContent = entry.pct_text;
+    if (entry.title) div.title = entry.title;
 
     const fill = div.querySelector('.bar-fill');
     fill.style.width = `${entry.fill_pct * 100}%`;

@@ -16,9 +16,7 @@ import json
 import logging
 import os
 import re
-import shutil
 import sqlite3
-import subprocess
 import sys
 import time
 from pathlib import Path
@@ -35,7 +33,6 @@ except ImportError:
 
 from .i18n import T
 from .instance_id import effective_config_dir
-from .platforms import no_window_kwargs
 
 log = logging.getLogger(__name__)
 
@@ -296,102 +293,6 @@ def _parse_retry_after(response: Any) -> int | None:
     return None
 
 
-def _fetch_agy_cli_quota(force: bool = False) -> dict[str, Any] | None:
-    """Deprecated: agy CLI slash command execution spawns background Language Server processes.
-
-    Executing ``agy -p /usage`` launches an internal language server daemon and sidecars,
-    which causes console window flashes on Windows. Quota is fetched cleanly
-    via direct Cloud Code HTTPS API or local Language Server Connect-RPC.
-    """
-    if not force:
-        return None
-
-    agy_bin = shutil.which('agy') or shutil.which('agy.exe')
-    if not agy_bin:
-        for candidate in (
-            os.path.expanduser(r'~\AppData\Local\agy\bin\agy.exe'),
-            os.path.expanduser(r'~\AppData\Local\Programs\antigravity\resources\bin\agy.exe'),
-        ):
-            if os.path.exists(candidate):
-                agy_bin = candidate
-                break
-
-    if not agy_bin:
-        return None
-
-    try:
-        cmd = [agy_bin, '-p', '/usage', '--output-format', 'json']
-        out = subprocess.check_output(
-            cmd,
-            stdin=subprocess.DEVNULL,
-            text=True,
-            errors='ignore',
-            timeout=10,
-            **no_window_kwargs(),
-        )
-        data = json.loads(out)
-        groups = data.get('command', {}).get('data', {}).get('groups', [])
-        buckets: dict[str, Any] = {}
-        for g in groups:
-            for b in g.get('buckets', []):
-                bid = b.get('id') or b.get('bucketId')
-                if bid:
-                    buckets[bid] = b
-
-        if buckets:
-            usage: dict[str, Any] = {}
-            if 'gemini-5h' in buckets:
-                rem = float(buckets['gemini-5h'].get('remaining_fraction', 1.0))
-                usage['gemini_5h'] = {
-                    'utilization': round((1.0 - rem) * 100.0, 1),
-                    'remaining': round(rem * 100.0, 1),
-                    'resets_at': buckets['gemini-5h'].get('reset_time'),
-                }
-                usage['gemini_flash'] = usage['gemini_5h']
-
-            if 'gemini-weekly' in buckets:
-                rem = float(buckets['gemini-weekly'].get('remaining_fraction', 1.0))
-                usage['gemini_weekly'] = {
-                    'utilization': round((1.0 - rem) * 100.0, 1),
-                    'remaining': round(rem * 100.0, 1),
-                    'resets_at': buckets['gemini-weekly'].get('reset_time'),
-                }
-                usage['gemini_pro'] = usage['gemini_weekly']
-
-            if '3p-5h' in buckets:
-                rem = float(buckets['3p-5h'].get('remaining_fraction', 1.0))
-                usage['claude_5h'] = {
-                    'utilization': round((1.0 - rem) * 100.0, 1),
-                    'remaining': round(rem * 100.0, 1),
-                    'resets_at': buckets['3p-5h'].get('reset_time'),
-                }
-                usage['claude_session'] = usage['claude_5h']
-
-            if '3p-weekly' in buckets:
-                rem = float(buckets['3p-weekly'].get('remaining_fraction', 1.0))
-                usage['claude_weekly'] = {
-                    'utilization': round((1.0 - rem) * 100.0, 1),
-                    'remaining': round(rem * 100.0, 1),
-                    'resets_at': buckets['3p-weekly'].get('reset_time'),
-                }
-
-            if 'gemini_5h' in usage:
-                usage['five_hour'] = usage['gemini_5h']
-            elif 'claude_5h' in usage:
-                usage['five_hour'] = usage['claude_5h']
-
-            if 'gemini_weekly' in usage:
-                usage['seven_day'] = usage['gemini_weekly']
-            elif 'claude_weekly' in usage:
-                usage['seven_day'] = usage['claude_weekly']
-
-            return usage
-    except Exception as exc:
-        log.debug('Failed to fetch quota via agy CLI: %s', exc)
-
-    return None
-
-
 def _fetch_cloudcode_quota() -> dict[str, Any] | None:
     """Fetch official quota limits directly from Google Cloud Code / Antigravity API."""
     token = read_access_token()
@@ -555,10 +456,195 @@ def _find_listening_ports() -> list[int]:
     return []
 
 
+def _get_process_cmdline_win32(pid: int) -> str | None:
+    """Read command line of a process on Windows using NtQueryInformationProcess."""
+    if sys.platform != 'win32':
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        ntdll = ctypes.windll.ntdll
+
+        class PROCESS_BASIC_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ('Reserved1', ctypes.c_void_p),
+                ('PebBaseAddress', ctypes.c_void_p),
+                ('Reserved2', ctypes.c_void_p * 2),
+                ('UniqueProcessId', ctypes.c_void_p),
+                ('Reserved3', ctypes.c_void_p),
+            ]
+
+        class UNICODE_STRING(ctypes.Structure):
+            _fields_ = [
+                ('Length', wintypes.USHORT),
+                ('MaximumLength', wintypes.USHORT),
+                ('Buffer', ctypes.c_void_p),
+            ]
+
+        h_proc = kernel32.OpenProcess(0x0400 | 0x0010, False, pid)  # PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
+        if not h_proc:
+            return None
+        try:
+            pbi = PROCESS_BASIC_INFORMATION()
+            ret_len = wintypes.ULONG()
+            if ntdll.NtQueryInformationProcess(h_proc, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(ret_len)) != 0:
+                return None
+            if not pbi.PebBaseAddress:
+                return None
+
+            is_64 = ctypes.sizeof(ctypes.c_void_p) == 8
+            proc_params_offset = 0x20 if is_64 else 0x10
+            cmdline_offset = 0x70 if is_64 else 0x40
+
+            proc_params_addr = ctypes.c_void_p()
+            read_bytes = ctypes.c_size_t()
+            if not kernel32.ReadProcessMemory(
+                h_proc, ctypes.c_void_p(pbi.PebBaseAddress + proc_params_offset),
+                ctypes.byref(proc_params_addr), ctypes.sizeof(proc_params_addr), ctypes.byref(read_bytes)
+            ):
+                return None
+
+            cmd_line_us = UNICODE_STRING()
+            if not kernel32.ReadProcessMemory(
+                h_proc, ctypes.c_void_p(proc_params_addr.value + cmdline_offset),
+                ctypes.byref(cmd_line_us), ctypes.sizeof(cmd_line_us), ctypes.byref(read_bytes)
+            ):
+                return None
+
+            if not cmd_line_us.Buffer or cmd_line_us.Length == 0:
+                return None
+
+            buf = ctypes.create_unicode_buffer(cmd_line_us.Length // 2)
+            if not kernel32.ReadProcessMemory(
+                h_proc, ctypes.c_void_p(cmd_line_us.Buffer),
+                buf, cmd_line_us.Length, ctypes.byref(read_bytes)
+            ):
+                return None
+
+            return buf.value
+        finally:
+            kernel32.CloseHandle(h_proc)
+    except Exception as exc:
+        log.debug('Failed to read cmdline for pid %s: %s', pid, exc)
+        return None
+
+
+def _find_antigravity_ls_targets() -> list[tuple[int, str | None]]:
+    """Find (port, csrf_token) for running Antigravity Language Server instances."""
+    targets: list[tuple[int, str | None]] = []
+    csrf_env = os.environ.get('ANTIGRAVITY_CSRF_TOKEN')
+
+    if sys.platform == 'win32':
+        try:
+            import ctypes
+            import ctypes.wintypes
+            import socket
+
+            iphlpapi = ctypes.windll.iphlpapi
+            kernel32 = ctypes.windll.kernel32
+            AF_INET = 2
+            TCP_TABLE_OWNER_PID_ALL = 5
+            MIB_TCP_STATE_LISTEN = 2
+
+            class MIB_TCPROW_OWNER_PID(ctypes.Structure):
+                _fields_ = [
+                    ('dwState', ctypes.wintypes.DWORD),
+                    ('dwLocalAddr', ctypes.wintypes.DWORD),
+                    ('dwLocalPort', ctypes.wintypes.DWORD),
+                    ('dwRemoteAddr', ctypes.wintypes.DWORD),
+                    ('dwRemotePort', ctypes.wintypes.DWORD),
+                    ('dwOwningPid', ctypes.wintypes.DWORD),
+                ]
+
+            size = ctypes.wintypes.DWORD(0)
+            iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)
+            for _ in range(5):
+                size.value += 4096
+                buf = (ctypes.c_byte * size.value)()
+                if iphlpapi.GetExtendedTcpTable(buf, ctypes.byref(size), True, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) == 0:
+                    break
+            else:
+                return []
+
+            num_entries = ctypes.cast(buf, ctypes.POINTER(ctypes.wintypes.DWORD)).contents.value
+            row_size = ctypes.sizeof(MIB_TCPROW_OWNER_PID)
+            offset = ctypes.sizeof(ctypes.wintypes.DWORD)
+
+            seen_pids: dict[int, str] = {}
+            pid_ports: dict[int, list[int]] = {}
+            other_candidate_ports: list[int] = []
+
+            for i in range(num_entries):
+                row = MIB_TCPROW_OWNER_PID.from_buffer(buf, offset + i * row_size)
+                if row.dwState == MIB_TCP_STATE_LISTEN and row.dwLocalAddr in (0, 0x0100007F):
+                    port = socket.ntohs(row.dwLocalPort & 0xFFFF)
+                    pid = row.dwOwningPid
+                    if pid not in seen_pids:
+                        h = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+                        name = ''
+                        if h:
+                            buf_name = ctypes.create_unicode_buffer(1024)
+                            sz = ctypes.wintypes.DWORD(1024)
+                            if kernel32.QueryFullProcessImageNameW(h, 0, buf_name, ctypes.byref(sz)):
+                                name = buf_name.value.lower()
+                            kernel32.CloseHandle(h)
+                        seen_pids[pid] = name
+                    proc_name = seen_pids[pid]
+                    if 'language_server' in proc_name:
+                        pid_ports.setdefault(pid, []).append(port)
+                    elif any(k in proc_name for k in ('antigravity', 'cursor', 'windsurf', 'zed')):
+                        other_candidate_ports.append(port)
+
+            for pid, ports in pid_ports.items():
+                cmdline = _get_process_cmdline_win32(pid)
+                csrf = None
+                if cmdline:
+                    m = re.search(r'--csrf_token\s+([a-zA-Z0-9-]+)', cmdline)
+                    if m:
+                        csrf = m.group(1)
+                csrf = csrf or csrf_env
+                for port in ports:
+                    targets.append((port, csrf))
+
+            for p in other_candidate_ports:
+                targets.append((p, csrf_env))
+        except Exception as exc:
+            log.debug('Failed to inspect listening ports/processes: %s', exc)
+
+    elif sys.platform.startswith('linux'):
+        try:
+            for pid_dir in Path('/proc').glob('[0-9]*'):
+                try:
+                    cmdline_path = pid_dir / 'cmdline'
+                    if not cmdline_path.exists():
+                        continue
+                    cmdline = cmdline_path.read_bytes().replace(b'\x00', b' ').decode('utf-8', errors='ignore')
+                    if 'language_server' in cmdline:
+                        csrf = None
+                        m = re.search(r'--csrf_token\s+([a-zA-Z0-9-]+)', cmdline)
+                        if m:
+                            csrf = m.group(1)
+                        csrf = csrf or csrf_env
+                        for p in _find_listening_ports():
+                            targets.append((p, csrf))
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+    return targets
+
+
 def _probe_local_antigravity_rpc() -> dict[str, Any] | None:
-    """Probe local Antigravity Language Server Connect-RPC endpoints."""
-    ports = _find_listening_ports()
-    if not ports:
+    """Probe local Antigravity Language Server Connect-RPC endpoints for real-time quota."""
+    targets = _find_antigravity_ls_targets()
+    if not targets:
+        ports = _find_listening_ports()
+        targets = [(p, os.environ.get('ANTIGRAVITY_CSRF_TOKEN')) for p in ports]
+
+    if not targets:
         return None
 
     payload = {
@@ -569,69 +655,80 @@ def _probe_local_antigravity_rpc() -> dict[str, Any] | None:
             'locale': 'en',
         }
     }
-    headers = {
-        'Content-Type': 'application/json',
-        'Connect-Protocol-Version': '1',
-    }
     token = read_access_token()
-    if token:
-        headers['Authorization'] = f'Bearer {token}'
 
-    # Probe up to 5 prioritized candidate ports
-    for port in ports[:5]:
+    # Probe HTTP first to avoid TLS handshakes on plain HTTP sockets
+    for port, csrf in targets:
+        headers = {
+            'Content-Type': 'application/json',
+            'Connect-Protocol-Version': '1',
+        }
+        if csrf:
+            headers['x-codeium-csrf-token'] = csrf
+        if token:
+            headers['Authorization'] = f'Bearer {token}'
+
         for scheme in ('http', 'https'):
             url = f'{scheme}://127.0.0.1:{port}/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary'
             try:
-                resp = requests.post(url, json=payload, headers=headers, timeout=0.2, verify=False)
+                resp = requests.post(url, json=payload, headers=headers, timeout=0.5, verify=False)
                 if resp.status_code == 200:
                     data = resp.json()
-                    groups = (data.get('response') or {}).get('groups') or []
+                    groups = (data.get('response') or {}).get('groups') or data.get('groups') or []
                     buckets: dict[str, Any] = {}
                     for g in groups:
                         for b in g.get('buckets', []):
-                            buckets[b.get('bucketId')] = b
+                            bid = b.get('bucketId') or b.get('id')
+                            if bid:
+                                buckets[bid] = b
 
                     if buckets:
                         usage: dict[str, Any] = {}
                         if 'gemini-5h' in buckets:
-                            rem = buckets['gemini-5h'].get('remainingFraction', 1.0)
+                            rem = float(buckets['gemini-5h'].get('remainingFraction', 1.0))
                             usage['gemini_5h'] = {
                                 'utilization': round((1.0 - rem) * 100.0, 1),
                                 'remaining': round(rem * 100.0, 1),
                                 'resets_at': buckets['gemini-5h'].get('resetTime'),
                             }
                             usage['gemini_flash'] = usage['gemini_5h']
+
                         if 'gemini-weekly' in buckets:
-                            rem = buckets['gemini-weekly'].get('remainingFraction', 1.0)
+                            rem = float(buckets['gemini-weekly'].get('remainingFraction', 1.0))
                             usage['gemini_weekly'] = {
                                 'utilization': round((1.0 - rem) * 100.0, 1),
                                 'remaining': round(rem * 100.0, 1),
                                 'resets_at': buckets['gemini-weekly'].get('resetTime'),
                             }
                             usage['gemini_pro'] = usage['gemini_weekly']
+
                         if '3p-5h' in buckets:
-                            rem = buckets['3p-5h'].get('remainingFraction', 1.0)
+                            rem = float(buckets['3p-5h'].get('remainingFraction', 1.0))
                             usage['claude_5h'] = {
                                 'utilization': round((1.0 - rem) * 100.0, 1),
                                 'remaining': round(rem * 100.0, 1),
                                 'resets_at': buckets['3p-5h'].get('resetTime'),
                             }
                             usage['claude_session'] = usage['claude_5h']
+
                         if '3p-weekly' in buckets:
-                            rem = buckets['3p-weekly'].get('remainingFraction', 1.0)
+                            rem = float(buckets['3p-weekly'].get('remainingFraction', 1.0))
                             usage['claude_weekly'] = {
                                 'utilization': round((1.0 - rem) * 100.0, 1),
                                 'remaining': round(rem * 100.0, 1),
                                 'resets_at': buckets['3p-weekly'].get('resetTime'),
                             }
+
                         if 'gemini_5h' in usage:
                             usage['five_hour'] = usage['gemini_5h']
                         elif 'claude_5h' in usage:
                             usage['five_hour'] = usage['claude_5h']
+
                         if 'gemini_weekly' in usage:
                             usage['seven_day'] = usage['gemini_weekly']
                         elif 'claude_weekly' in usage:
                             usage['seven_day'] = usage['claude_weekly']
+
                         if usage:
                             return usage
             except Exception:
@@ -752,27 +849,22 @@ def fetch_usage() -> dict[str, Any]:
     if not token and not ANTIGRAVITY_CREDENTIALS.exists():
         return {'error': T.get('no_token', 'No Antigravity credentials found. Sign in via agy.')}
 
-    # Tier 1: Direct Cloud Code quota API (fast, pure HTTP, no window flicker)
+    # Tier 1: Local Antigravity Language Server RPC probe (live real-time IDE state)
+    local_rpc = _probe_local_antigravity_rpc()
+    if local_rpc:
+        return local_rpc
+
+    # Tier 2: Direct Cloud Code quota API (fallback when IDE is not running)
     cloud_usage = _fetch_cloudcode_quota()
     if cloud_usage and 'error' in cloud_usage:
         return cloud_usage
     if cloud_usage:
         return cloud_usage
 
-    # Tier 2: Local Antigravity Language Server RPC probe
-    local_rpc = _probe_local_antigravity_rpc()
-    if local_rpc:
-        return local_rpc
-
     # Tier 3: Local SQLite telemetry tracking
     local_usage = _fetch_local_sqlite_telemetry()
     if local_usage:
         return local_usage
-
-    # Tier 4: Explicit forced agy CLI check (only if force requested)
-    agy_usage = _fetch_agy_cli_quota(force=False)
-    if agy_usage:
-        return agy_usage
 
     # Fallback default active window
     now = datetime.datetime.now(datetime.timezone.utc)

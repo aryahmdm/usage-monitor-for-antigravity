@@ -57,7 +57,7 @@ _ANTIGRAVITY_FULL_LABELS = {
     'daily': 'Daily Turns',
 }
 
-_ALIAS_KEYS = frozenset({'gemini_flash', 'gemini_pro', 'claude_session'})
+_ALIAS_KEYS = frozenset({'gemini_flash', 'gemini_pro', 'claude_session', 'five_hour', 'seven_day', 'session'})
 
 
 def parse_field_name(field: str) -> tuple[int, str, str | None] | None:
@@ -141,6 +141,9 @@ def is_active_quota(field: str, entry: Any) -> bool:
     if not isinstance(entry, dict) or entry.get('utilization') is None:
         return False
 
+    if 'resets_at' not in entry and not entry.get('from_account_limits'):
+        return False
+
     if field in (
         'gemini_5h', 'gemini_weekly', 'claude_5h', 'claude_weekly',
         'gemini_flash', 'gemini_pro', 'claude_session', 'session', 'daily'
@@ -161,6 +164,8 @@ def _field_sort_key(field: str) -> tuple[int, int, int, str]:
         'gemini_pro': 5,
         'claude_session': 6,
         'session': 7,
+        'five_hour': 8,
+        'seven_day': 9,
     }
     if field in order_map:
         return (0, order_map[field], 0, field)
